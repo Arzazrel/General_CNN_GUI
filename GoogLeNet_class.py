@@ -41,14 +41,25 @@ def inception_mod(in_net, fil_1x1, fil_1x1_3x3, fil_3x3, fil_1x1_5x5, fil_5x5, f
 # class that implement the GoogLeNet model
 class GoogLeNet:
     
+    """
     # constructor
     def __init__(self,class_number):
-        self.model = None                       # var that will contain the model of the CNN AlexNet
+        self.model = None                       # var that will contain the model of the CNN GoogLeNet
         self.num_classes = class_number         # var that will contain the number of the classes of the problem (in our case is 2 (fire, no_fire))
         # var for the image dimension
         self.img_height = 224                   # height of the images in input to CNN
         self.img_width = 224                    # width of the images in input to CNN
         self.img_channel = 3                    # channel of the images in input to CNN (RGB)
+        """
+        
+    # constructor with image size of the input layer
+    def __init__(self,class_number,img_width = 224,img_height = 224,img_channel = 3):
+        self.model = None                       # var that will contain the model of the CNN GoogLeNet
+        self.num_classes = class_number         # var that will contain the number of the classes of the problem (in our case is 2 (fire, no_fire))
+        # var for the image dimension
+        self.img_height = img_height            # height of the images in input to CNN
+        self.img_width = img_width              # width of the images in input to CNN
+        self.img_channel = img_channel          # channel of the images in input to CNN (RGB)
         
         
     # method for make the model of the CNN. Due to the structure of the network (inception and parallel paths) it is better to use keras Models class instead of sequential

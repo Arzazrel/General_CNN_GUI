@@ -116,12 +116,7 @@ label_ext_image_text = StringVar()              # text that shows the groundtrut
 label_ext_image_text.set('')                    # default value
 
 # ---- path variables ----
-# path to old ds
-#path_dir_ds = os.path.join("Dataset","old_ds","Train_DS")   # folder in which there are the image ds for training
-# path to new ds
-#path_dir_ds = os.path.join("Dataset","pkm_ds_mod")          # folder in which there are the image ds for training
 path_dir_ds = os.path.join("Dataset","polmonite")           # folder in which there are the image ds for training
-#path_dir_ds = os.path.join("Dataset","big_cats")            # folder in which there are the image ds for training
 path_dir_test_ds = os.path.join("Dataset","pkm_test_ds")    # folder in which there are the image ds for testing
 path_dir_model = "Model"                                    # folder in which there are saved the CNN model
 path_check_point_model = os.path.join(path_dir_model,"train_hdf5")  # folder in which there are saved the checkpoint for the model training
@@ -822,23 +817,23 @@ def make_fit_model(chosen_model,number_epoch,num_batch_size,num_early_patience):
             ANet_Model.compile_model()                      # compile 
             network = ANet_Model.return_model()             # return model
         elif chosen_model == "GoogleNet":
-            GLNet_Model = GLNet.GoogLeNet(len(classes))     # create an instance of the AlexNet class
+            GLNet_Model = GLNet.GoogLeNet(len(classes),img_width,img_height,img_channel)     # create an instance of the AlexNet class
             GLNet_Model.make_model()                        # make model (GoogLeNet architecture)
             GLNet_Model.compile_model()                     # compile model
             network = GLNet_Model.return_model()            # return model
             return
         elif chosen_model == "Ifrit_1":                    
-            Ifrit_Model = IfritNet.IfritNet(len(classes))    # create an instance of the IfriNet class
+            Ifrit_Model = IfritNet.IfritNet(len(classes),img_width,img_height,img_channel)    # create an instance of the IfriNet class
             Ifrit_Model.make_model(1)                       # make model (IfriNet 1 architecture)
             Ifrit_Model.compile_model()                     # compile model
             network = Ifrit_Model.return_model()            # return model
         elif chosen_model == "Ifrit_2":                       
-            Ifrit_Model = IfritNet.IfritNet(len(classes))    # create an instance of the IfriNet class
+            Ifrit_Model = IfritNet.IfritNet(len(classes),img_width,img_height,img_channel)    # create an instance of the IfriNet class
             Ifrit_Model.make_model(2)                       # make model (IfriNet 1 architecture)
             Ifrit_Model.compile_model()                     # compile model
             network = Ifrit_Model.return_model()            # return model
         elif chosen_model == "Ifrit_3":                       
-            Ifrit_Model = IfritNet.IfritNet(len(classes))    # create an instance of the IfriNet class
+            Ifrit_Model = IfritNet.IfritNet(len(classes),img_width,img_height,img_channel)    # create an instance of the IfriNet class
             Ifrit_Model.make_model(3)                       # make model (IfriNet 1 architecture)
             Ifrit_Model.compile_model()                     # compile model
             network = Ifrit_Model.return_model()            # return model
