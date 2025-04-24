@@ -345,26 +345,28 @@ def btn_load_image():
     
     if len(test_image) == 0 or len(test_label) == 0:            # check if there are images in test label
         if len(total_image_ds) != 0:                            # take image from total dataset
-            print("prendo immagine da total_ds")
             index = random.randint(0,len(total_image_ds)-1)     # chose a random index
+            print("Take image to visualize and classify from total_ds, index: ",index)
             index_image_visualized = index      
-            img = total_image_ds[index]                         # take random image from ds, the image at the index position
+            img = cv2.imread(total_image_ds[index])             # take the chosen image
             label = str(classes[np.argmax(total_labels_ds[index])])        # take the label of the chosen image    
             label_image_text.set(str(label))                    # shows the label of the chosen image
             label_ext_image_text.set('')                        # clean the label of the image taken from the external test ds
         else:                                                   # no dataset loaded
             error_text.set(er_no_ds_text)                       # shows text error
     else:                                                       # take image from test dataset
-        print("prendo immagine da set di test")
         index = random.randint(0,len(test_image)-1)             # chose a random index
+        print("Take image to visualize and classify from test set, index: ",index)
         index_image_visualized = index
-        img = test_image[index]*255                             # remember that the value of the image have been normalized
+        img = cv2.imread(test_image[index])                     # take the chosen image
         label = str(classes[np.argmax(test_label[index])])      # take the label of the chosen image 
         label_image_text.set(str(label))                        # shows the label of the chosen image
         label_ext_image_text.set('')                            # clean the label of the image taken from the external test ds
     
     if img is not None:
-        blue,green,red = cv2.split(img)                         # Rearrange colors
+        dim = ((im_frame_height - 2*im_f_pady) ,(im_frame_height - 2*im_f_pady))    # dim of the image to visualize
+        img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)   # resize the image
+        blue,green,red = cv2.split(img)                             # Rearrange colors
         img = cv2.merge((red,green,blue))
         im = PIL.Image.fromarray(np.uint8(img),'RGB')
         image_to_visualize = ImageTk.PhotoImage(image=im)       # update image to visualize in GUI
@@ -382,13 +384,16 @@ def btn_load_ext_image():
         error_text.set(er_no_ext_ds_text)                       # shows text error
     else:                                                       # take image from test dataset
         index = random.randint(0,len(test_image_ext)-1)         # chose a random index
+        print("Take image to visualize and classify from external test set, index: ",index)
         index_image_visualized = index
-        img = test_image_ext[index]*255                         # remember that the value of the image have been normalized
-        label = str(classes[np.argmax(test_label_ext[index])])             # take the label of the chosen image 
+        img = cv2.imread(test_image_ext[index])                 # take the chosen image
+        label = str(classes[np.argmax(test_label_ext[index])])  # take the label of the chosen image 
         label_ext_image_text.set(str(label))                    # shows the label of the chosen image
         label_image_text.set('')                                # clean the label of the image taken from the test ds
     
     if img is not None:
+        dim = ((im_frame_height - 2*im_f_pady) ,(im_frame_height - 2*im_f_pady))    # dim of the image to visualize
+        img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)                   # resize the image
         blue,green,red = cv2.split(img)                         # Rearrange colors
         img = cv2.merge((red,green,blue))
         im = PIL.Image.fromarray(np.uint8(img),'RGB')
@@ -413,11 +418,12 @@ def btn_load_ds_method(im_width,im_height,im_channel):
     
 # method for import the whole dataset, path_ds is the path of the dataset to load. -- P.S. for more detail please read note 0 (at the end of the file)  
 def import_image_from_ds(path_ds,im_width,im_height,im_channel):
-    global total_image_ds, total_labels_ds,ds_downloading   # refer to global variables
+    global total_image_ds, total_labels_ds,ds_downloading,classes   # refer to global variables
     list_dir_ds = os.listdir(path_ds)               # list of the folders that are in the DS, one folder for each class
     
     # check if the total ds is already loaded
     if len(total_image_ds) != 0:                    # cleans the arrays to allow the dataset to be reloaded
+        classes = []
         total_image_ds = []                 
         total_labels_ds = []               
 
@@ -428,22 +434,16 @@ def import_image_from_ds(path_ds,im_width,im_height,im_channel):
   
     # take the images and labels form DataSet
     for folder in list_dir_ds:                      # for each folder in DS
+        print("Read the folder: ",folder)           # status print
         classes.append(str(folder))                 # update classes
         index = classes.index(str(folder))          # take index of classes, is teh label of this class
         p = os.path.join(path_ds,folder)            # path of each folder
-        #creating a collection with the available images
+        # creating a collection with the available images
         for filename in os.listdir(p):                      # for each images on the current folder
             img = cv2.imread(os.path.join(p,filename))      # take current iamge
             if img is not None:                             # check image taken
-                #check if the image is in the correct shape for the CNN (shape specified in the global variables)
-                if img.shape != (img_width, img_height, img_channel):       
-                    dim = (img_height ,img_width)
-                    resize_img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)  # resize the image
-                    total_image_ds.append(resize_img)                                   # add image to total_image_ds
-                    total_labels_ds.append(index)                                       # add correlated label to total_lael_ds
-                else:
-                    total_image_ds.append(img)                                          # add image to total_image_ds
-                    total_labels_ds.append(index)                                       # add correlated label to total_lael_ds
+                total_image_ds.append(os.path.join(p,filename)) # add title of the image to total_image_ds
+                total_labels_ds.append(index)               # add correlated label to total_lael_ds
             else:
                 print("Image loading error...",filename)
     
@@ -454,7 +454,7 @@ def import_image_from_ds(path_ds,im_width,im_height,im_channel):
     print("Num of classes: ",len(classes))
     print("total_image_ds",len(total_image_ds), total_image_ds.shape)
     print("total_labels_ds",len(total_labels_ds), total_labels_ds.shape)
-    print("Requied memory for images ds: ",total_image_ds.size * total_image_ds.itemsize / 10**9," GB")
+    print("Requied memory for images ds: ",total_image_ds.size * total_image_ds.itemsize / 10**6," MB")
     
     status_DS_text.set('Image DataSet: downloaded')             # notify the end of the process
     error_text.set('')                                          # cleans error text
@@ -490,21 +490,17 @@ def import_image_from_ext_test_ds(path_ds,im_width,im_height,im_channel):
     status_ext_test_DS_text.set('External test DS: loading')   # notify the start of the import
     # take the images and labels form DataSet
     for folder in list_dir_ds:                      # for each folder in DS
+        print("Read the folder: ",folder)           # status print
         index = classes.index(str(folder))          # take index of classes, is teh label of this class
         p = os.path.join(path_ds,folder)            # path of each folder
         #creating a collection with the available images
         for filename in os.listdir(p):                      # for each images on the current folder
             img = cv2.imread(os.path.join(p,filename))      # take current iamge
             if img is not None:                             # check image taken
-                #check if the image is in the correct shape for the CNN (shape specified in the global variables)
-                if img.shape != (img_width, img_height, img_channel):       
-                    dim = (img_height ,img_width)
-                    resize_img = cv2.resize(img, dim, interpolation= cv2.INTER_LINEAR)  # resize the image
-                    image_ds.append(resize_img)                                   # add image to total_image_ds
-                    labels_ds.append(index)                                       # add correlated label to total_lael_ds
-                else:
-                    image_ds.append(img)                                          # add image to total_image_ds
-                    labels_ds.append(index)                                       # add correlated label to total_lael_ds
+                image_ds.append(os.path.join(p,filename)) # add title of the image to total_image_ds
+                labels_ds.append(index)               # add correlated label to total_lael_ds
+            else:
+                print("Image loading error...",filename)
                     
     # convert in np.array
     test_image_ext = np.array(image_ds)
@@ -523,10 +519,8 @@ def make_set_ds():
     global test_image, test_label, train_image, train_label, val_img,val_label          # global variables references
     
     # ----- preprocessing and reshape ----
-    lunghezza = len(total_image_ds)                                                     # take the len of the dataset
-    image_ds = total_image_ds.reshape((lunghezza, img_width, img_height, img_channel))  # resize
-    image_ds = image_ds.astype('float32') / 255                                         # normalization
-    labels_ds = to_categorical(total_labels_ds,num_classes=len(classes))                # transform label in categorical format
+    image_ds = np.array(total_image_ds)
+    labels_ds = to_categorical(total_labels_ds,num_classes=len(classes))    # transform label in categorical format
     
     # ---- generete the training and test set ----
     # split to generate train and test set
@@ -547,20 +541,31 @@ def generator_train():
     
     if not truncate_set:                                        # check if it has to truncate or not the set
         rest = batch_size - (len(train_image) % batch_size)     # check if the division by batch_size produce rest
-        #print("Training test rest: ",rest)
     else:
         rest = batch_size                                       # set always truncated
-    #print("lunghezza totale: ", len(total_train_image), " Batch_size: ",batch_size, " modulo: ",len(total_train_image) % batch_size, " mancante(rest): ",rest)
+    
     for idx in range(len(train_image)):                         # organize the sample in batch
         # take one image and the corresponding labels
-        img = train_image[idx]                              
+        img_path = train_image[idx]                              
         label = train_label[idx]
+        img = cv2.imread(img_path)    # take current iamge
+        if img is not None:                             # check image taken
+            #check if the image is in the correct shape for the CNN (shape specified in the global variables)
+            if img.shape != (img_width, img_height, img_channel):       
+                dim = (img_height ,img_width)
+                img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)        # resize the image
+                img = img.astype('float32') / 255                                # normalization
+                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))   # add new element and convert to TF tensors
+            else:
+                img = img.astype('float32') / 255                                       # normalization
+                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))          # add new element and convert to TF tensors
+        else:
+             print("Image loading error in generator_train...",img_path)
+        
         # add new element and convert to TF tensors
-        img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))
         label_tensor.append(tf.convert_to_tensor(label, dtype=tf.float32))
         
         if rest != batch_size and idx < rest:                   #check for the rest
-            #print("aggiungo elemento ",idx," al contenitore per riempire il batch size finale")
             # add this sample for the future (sample in the rest)
             img_rest_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))
             label_rest_tensor.append(tf.convert_to_tensor(label, dtype=tf.float32))
@@ -572,14 +577,12 @@ def generator_train():
             label_tensor.clear()
             
         if idx == (len(train_image) - 1):                       # check if the set is finished, last batch
-            #print("arrivato alla fine")
             if rest != batch_size:                              # check if there are rest to fix
-                #print("Sono in ultimo batch\nLunghezza ad ora del batch: ",len(img_tensor))
                 #there are samples that don't complete a batch, add rest sample to complete the last batch
                 for i in range(rest):
                     img_tensor.append(img_rest_tensor[i])
                     label_tensor.append(label_rest_tensor[i])
-                #print("Generator training set, arrivato a posizione: ",idx)
+
                 yield img_tensor, label_tensor                  # return the last batch
 
 # define generator function to do the validation set
@@ -592,16 +595,28 @@ def generator_val():
     
     if not truncate_set:                                        # check if it has to truncate or not the set
         rest = batch_size - (len(val_img) % batch_size)         # check if the division by batch_size produce rest
-        #print("Training test rest: ",rest)
     else:
         rest = batch_size                                       # set always truncated
     
     for idx in range(len(val_img)):                             # organize the sample in batch
         # take one image and the corresponding mask
-        img = val_img[idx]
+        img_path = val_img[idx]
         label = val_label[idx]
+        img = cv2.imread(img_path)    # take current iamge
+        if img is not None:                             # check image taken
+            #check if the image is in the correct shape for the CNN (shape specified in the global variables)
+            if img.shape != (img_width, img_height, img_channel):       
+                dim = (img_height ,img_width)
+                img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)        # resize the image
+                img = img.astype('float32') / 255                         # normalization
+                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))   # add new element and convert to TF tensors
+            else:
+                img = img.astype('float32') / 255                                       # normalization
+                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))          # add new element and convert to TF tensors
+        else:
+            print("Image loading error in generator_val...",img_path)
+        
         # add new element and convert to TF tensors
-        img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))
         label_tensor.append(tf.convert_to_tensor(label, dtype=tf.float32))
         
         if rest != batch_size and idx < rest:                   #check for the rest
@@ -633,17 +648,28 @@ def generator_test():
     
     if not truncate_set:                                        # check if it has to truncate or not the set
         rest = batch_size - (len(test_image) % batch_size)      # check if the division by batch_size produce rest
-        #print("Training test rest: ",rest)
     else:
         rest = batch_size                                       # set always truncated
     
     for idx in range(len(test_image)):                          # organize the sample in batch
         # extract one image and the corresponding mask
-        img = test_image[idx]
+        img_path = test_image[idx]
         label = test_label[idx]
+        img = cv2.imread(img_path)    # take current iamge
+        if img is not None:                             # check image taken
+            #check if the image is in the correct shape for the CNN (shape specified in the global variables)
+            if img.shape != (img_width, img_height, img_channel):       
+                dim = (img_height ,img_width)
+                img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)        # resize the image
+                img = img.astype('float32') / 255                         # normalization
+                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))   # add new element and convert to TF tensors
+            else:
+                img = img.astype('float32') / 255                                       # normalization
+                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))          # add new element and convert to TF tensors
+        else:
+            print("Image loading error in generator_test...",img_path)
 
         # add new element and convert to TF tensors
-        img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))
         label_tensor.append(tf.convert_to_tensor(label, dtype=tf.float32))
         
         if rest != batch_size and idx < rest:                   #check for the rest
@@ -895,6 +921,9 @@ def make_fit_model(chosen_model,number_epoch,num_batch_size,num_early_patience):
     
 # method for evaluate the model by the test set. 'param' specify if the evaluate hase to use test set or external test set ('',)
 def model_evaluate(param):
+    data_test = []
+    labels_test = []
+    
     error_text.set('')                                  # clear error text
     if not model_trained:                               # check control if there is a CNN model ready
         error_text.set(er_eval_without_model_text)      # update error text
@@ -904,20 +933,51 @@ def model_evaluate(param):
         if len(test_image) == 0 or len(test_label) == 0:
             # split
             data_train, data_test, labels_train, labels_test = train_test_split(total_image_ds, total_labels_ds, test_size=test_set_split , random_state=42)
-            lunghezza = len(data_test)                                                      # take the len of the dataset
-            data_test = data_test.reshape((lunghezza, img_width, img_height, img_channel))  # resize
-            data_test = data_test.astype('float32') / 255                                   # normalization
-            labels_test = to_categorical(labels_test,num_classes=len(classes))              # transform label in categorical format
+            for img_path in data_test:
+                img = cv2.imread(img_path)              # take current iamge
+                if img is not None:                     # check image taken
+                #check if the image is in the correct shape for the CNN (shape specified in the global variables)
+                    if img.shape != (img_width, img_height, img_channel):       
+                        dim = (img_height ,img_width)
+                        img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)   # resize the image
+                        img = img.astype('float32') / 255                           # normalization
+                        data_test.append(img)                                       # add new element
+                    else:
+                        img = img.astype('float32') / 255                           # normalization
+                        data_test.append(img)                                       # add new element
+                else:
+                    print("Image loading error in model_evaluate...",img_path)
+            
+            labels_test = to_categorical(labels_test,num_classes=len(classes))      # transform label in categorical format
         else:
-            data_test = test_image
-            labels_test = test_label
+            # take all the images from th test set
+            for img_path in test_image:
+                img = cv2.imread(img_path)              # take current iamge
+                if img is not None:                     # check image taken
+                #check if the image is in the correct shape for the CNN (shape specified in the global variables)
+                    if img.shape != (img_width, img_height, img_channel):       
+                        dim = (img_height ,img_width)
+                        img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)   # resize the image
+                        img = img.astype('float32') / 255                           # normalization
+                        data_test.append(img)                                       # add new element
+                    else:
+                        img = img.astype('float32') / 255                           # normalization
+                        data_test.append(img)                                       # add new element
+                else:
+                    print("Image loading error in model_evaluate...",img_path)
+   
+            labels_test = test_label                                # take labels 
     elif param == "extern":                                         # use extern test ds
         if len(test_image_ext) == 0 or len(test_label_ext) == 0:    # check if the external test ds has already loaded
-            error_text.set(er_eval_without_model_text)      # update error text
+            error_text.set(er_eval_without_model_text)              # update error text
             return
         else:
             data_test = test_image_ext.astype('float32') / 255                              # normalization
             labels_test = to_categorical(test_label_ext,num_classes=len(classes))           # transform label in categorical format
+
+    # resize the set of the image
+    data_test = np.array(data_test)
+    data_test = data_test.reshape((len(data_test), img_width, img_height, img_channel))     
     
     test_loss, test_acc = network.evaluate(data_test, labels_test)                      # obtain loss and accuracy metrics
     dict_metrics = {'loss': test_loss, 'accuracy': test_acc}                            # create a dictionary contain the metrics
@@ -956,17 +1016,66 @@ def predict():
         # control check for origin of the image displayed
         if label_image_text.get() != '':                        # image from internal test set
             if len(test_image) == 0 or len(test_label) == 0:    # check to know what set is used (total_image_ds or total_test_image)
-                # take from total_image_ds
-                print("prendo immagine da set totale")
-                img = total_image_ds[index_image_visualized].reshape((1, img_width, img_height, img_channel))   
-            else:                                               # take from total_test_image
-                print("prendo immagine da set di test")
-                img = test_image[index_image_visualized].reshape((1, img_width, img_height, img_channel))
+                print("Take image from total_image_ds...")      # take from total_image_ds
+                
+                # take image
+                img = cv2.imread(total_image_ds[index_image_visualized])            # take current iamge
+                if img is not None:                     # check image taken
+                    #check if the image is in the correct shape for the CNN (shape specified in the global variables)
+                    if img.shape != (img_width, img_height, img_channel):       
+                        dim = (img_height ,img_width)
+                        img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)   # resize the image
+                        img = img.astype('float32') / 255                           # normalization
+                    else:
+                        img = img.astype('float32') / 255                           # normalization
+                else:
+                    print("Image loading error in model_evaluate...",img_path)
+                
+                # resize image
+                img = np.array(img)
+                img = img.reshape((1, img_width, img_height, img_channel))  
+  
+            else:                                               # take from test_image
+                print("Take image from test_image...")
+                
+                # take image
+                img = cv2.imread(test_image[index_image_visualized])            # take current iamge
+                if img is not None:                     # check image taken
+                    #check if the image is in the correct shape for the CNN (shape specified in the global variables)
+                    if img.shape != (img_width, img_height, img_channel):       
+                        dim = (img_height ,img_width)
+                        img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)   # resize the image
+                        img = img.astype('float32') / 255                           # normalization
+                    else:
+                        img = img.astype('float32') / 255                           # normalization
+                else:
+                    print("Image loading error in model_evaluate...",img_path)
+                
+                # resize image
+                img = np.array(img)
+                img = img.reshape((1, img_width, img_height, img_channel))  
+
             # predict
             predictions = network.predict(img)                              # get the output for each sample
             classify_text.set(': '+str(classes[np.argmax(predictions)]))    # update GUI
+        
         elif label_ext_image_text.get() != '':                  # image from external test set
-            img = test_image_ext[index_image_visualized].reshape((1, img_width, img_height, img_channel))
+            # take image
+            img = cv2.imread(test_image_ext[index_image_visualized])            # take current iamge
+            if img is not None:                     # check image taken
+                #check if the image is in the correct shape for the CNN (shape specified in the global variables)
+                if img.shape != (img_width, img_height, img_channel):       
+                    dim = (img_height ,img_width)
+                    img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)   # resize the image
+                    img = img.astype('float32') / 255                           # normalization
+                else:
+                    img = img.astype('float32') / 255                           # normalization
+            else:
+                 print("Image loading error in model_evaluate...",img_path)
+                
+            # resize image
+            img = np.array(img)
+            img = img.reshape((1, img_width, img_height, img_channel))  
             # predict
             predictions = network.predict(img)                              # get the output for each sample
             classify_ext_text.set(': '+str(classes[np.argmax(predictions)]))# update GUI
@@ -1017,23 +1126,45 @@ def plot(title,value_list):
 # method for create and plot the confusion metrix of the model trained
 def confusion_matrix():
     global test_image, test_label, network, classes # global variables references
+    data_test = []                                  # set of the images of the test set
+    
     # create the confusion matrix, rows indicate the real class and columns indicate the predicted class 
     conf_matrix = np.zeros((len(classes),len(classes)))     # at begin values are 0
     
-    predictions = network.predict(test_image)               # get the output for each sample of the test set
+    # take all the images from the test set
+    for img_path in test_image:
+        img = cv2.imread(img_path)              # take current iamge
+        if img is not None:                     # check image taken
+        #check if the image is in the correct shape for the CNN (shape specified in the global variables)
+            if img.shape != (img_width, img_height, img_channel):       
+                dim = (img_height ,img_width)
+                img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)   # resize the image
+                img = img.astype('float32') / 255                           # normalization
+                data_test.append(img)                                       # add new element
+            else:
+                img = img.astype('float32') / 255                           # normalization
+                data_test.append(img)                                       # add new element
+        else:
+            print("Image loading error in model_evaluate...",img_path)
+                    
+    # resize the set of the image
+    data_test = np.array(data_test)
+    data_test = data_test.reshape((len(data_test), img_width, img_height, img_channel))     
+    
+    predictions = network.predict(data_test)                # get the output for each sample of the test set
     # slide the prediction result and go to create the confusion matrix
-    for i in range(len(test_image)):
-        # test_label[i] indicate the real value of the label associated at the test_image[i] -> is real class (row)
-        # predictions[i] indicate the class value predicted by the model for the test_image[i] -> is predicted class (column)
+    for i in range(len(data_test)):
+        # test_label[i] indicate the real value of the label associated at the test_image[i] (or data_test[i]) -> is real class (row)
+        # predictions[i] indicate the class value predicted by the model for the test_image[i] (or data_test[i]) -> is predicted class (column)
         # the values are in categorical format, translate in int
-        conf_matrix[np.argmax(test_label[i])][np.argmax(predictions[i])] += 1                              # update value
+        conf_matrix[np.argmax(test_label[i])][np.argmax(predictions[i])] += 1                               # update value
         
     # do percentages of confusion matrix
-    conf_matrix_perc = [[None for c in range(conf_matrix.shape[1])] for r in range(conf_matrix.shape[0])]  # define matrix
+    conf_matrix_perc = [[None for c in range(conf_matrix.shape[1])] for r in range(conf_matrix.shape[0])]   # define matrix
     
     for i in range(conf_matrix.shape[0]):                   # rows
         for j in range(conf_matrix.shape[1]):               # columns
-            conf_matrix_perc[i][j] = " (" + str( round( (conf_matrix[i][j]/len(test_image))*100 ,2) ) + "%)"    # calculate percentage value
+            conf_matrix_perc[i][j] = " (" + str( round( (conf_matrix[i][j]/len(data_test))*100 ,2) ) + "%)" # calculate percentage value
     
     # plot the confusion matrix
     rows = classes                                          # contain the label of the classes showed in the rowvalues of rows          
@@ -1058,6 +1189,8 @@ def confusion_matrix():
     
 # method to check GPU device avaible and setting
 def GPU_check():
+    print("-------------------- AVAILABLE HW DEVICES --------------------")
+    print("List of devices:")
     print(device_lib.list_local_devices())
     print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
     gpus = tf.config.list_physical_devices('GPU')
@@ -1069,27 +1202,32 @@ def GPU_check():
                 logical_gpus = tf.config.list_logical_devices('GPU')
                 print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
         except RuntimeError as e:
-            # Memory growth must be set before GPUs have been initialized
-            print(e)
-    print("Memoria usata: ",print("",tf.config.experimental.get_memory_info('GPU:0')['current'] / 10**9))
+            print(e)    
+    print("Used VRAM (GPU memory): ",print("",tf.config.experimental.get_memory_info('GPU:0')['current'] / 10**9))
+    print("------------------------------------------------------------")
 
+# funzione di utilità per visualizzare un tempo dato in secondi in minuti, secondi
+def converti_secondi(sec):
+    minuti = sec // 60
+    secondi = sec % 60
+    return f"{minuti}m {secondi}s"
 # ------------------------------------ end: utility method ------------------------------------
 
 # ------------------------------------ main ------------------------------------        
 if __name__ == "__main__":
-    window.title("GenCNNClassifier")
-    window.geometry(str(window_width)+'x'+str(window_height))
-    window.resizable(False, False)
+    window.title("GenCNNClassifier")                            # title of the GUI window
+    window.geometry(str(window_width)+'x'+str(window_height))   # size of the windows
+    window.resizable(False, False)                              # window can't be resized
     
-    #GPU_check()                         #
-    #set_background_image()          # set background image
+    GPU_check()                    # check if the program can be read the GPU (the library for AI of Nvidia is setting properly)
+    #set_background_image()         # set background image
     current_view_to_visualise()     # method for visualize the correct GUI
     
     # handle the window closing by the user
     #window.protocol("WM_DELETE_WINDOW", on_closing)
     window.mainloop()
     
-# -------- Notes --------
+# ------------------------------------ Notes ------------------------------------
 # -- Note 0 --
 # in "import_image_from_ds" method I chose an approch more flexible than necessary. Array classes will contain the labels of the classes,
 # in this way the classes number and names are not fixed apriori but it's calculated at real time.
