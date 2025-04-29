@@ -11,6 +11,7 @@ import tensorflow as tf
 from tensorflow.keras import models
 from tensorflow.keras import layers
 from tensorflow.keras import Model
+from tensorflow.keras.layers import Concatenate
 
 # ------------------------------------ start: utility methods ------------------------------------
 
@@ -32,22 +33,13 @@ def inception_mod(in_net, fil_1x1, fil_1x1_3x3, fil_3x3, fil_1x1_5x5, fil_5x5, f
     path4 = layers.MaxPool2D(pool_size=(3, 3), strides=(1, 1), padding='same')(in_net)                          # max pool
     path4 = layers.Conv2D(filters=fil_m_pool, kernel_size=(1, 1), padding='same', activation='relu')(path4)     # conv 1x1 to reduce
     
-    return tf.concat([path1, path2, path3, path4], axis=3)                  # merge of the different path
+    output = Concatenate(axis=3)([path1, path2, path3, path4])      # merge of the different path
+    return output
 
 # ------------------------------------ end: utility methods ------------------------------------
 
 # class that implement the IfriNet models
 class IfritNet:
-    """
-    # constructor
-    def __init__(self,class_number):
-        self.model = None                       # var that will contain the model of the CNN AlexNet
-        self.num_classes = class_number         # var that will contain the number of the classes of the problem (in our case is 2 (fire, no_fire))
-        # var for the image dimension
-        self.img_height = 224                   # height of the images in input to CNN
-        self.img_width = 224                    # width of the images in input to CNN
-        self.img_channel = 3                    # channel of the images in input to CNN (RGB)
-        """
         
     # constructor with image size of the input layer
     def __init__(self,class_number,img_width = 224,img_height = 224,img_channel = 3):
@@ -174,10 +166,6 @@ class IfritNet:
     # method for return the model
     def return_model(self):
         return self.model
-    
-#Ifrit_Model = IfritNet(2)    # create an instance of the IfriNet class
-#Ifrit_Model.make_model(1)   
-#Ifrit_Model.make_model(4)    
 
 """
 -------- Notes --------

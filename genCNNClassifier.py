@@ -7,6 +7,8 @@ Created on Sun Nov 24 22:07:58 2024
 
 # general
 import os
+os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'    # to manage better the allocator of the VRAM
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'                # 0 = all logs, 1 = warnings, 2 = errors, 3 = nothing
 import numpy as np
 import random
 import time
@@ -31,20 +33,20 @@ from PIL import ImageTk
 from PIL import Image
 # for GUI
 from tkinter import *
-from  tkinter import ttk
+from tkinter import ttk
 # for thread
 from threading import Thread
 # for tensorflow-GPU
 from tensorflow.python.client import device_lib 
 # import of my files
-import AlexNet_class as ANet
-import GoogLeNet_class as GLNet
-import IfritNet_class as IfritNet
+from net_classes import AlexNet_class as ANet
+from net_classes import GoogLeNet_class as GLNet
+from net_classes import IfritNet_class as IfritNet
 
 # ------------------------------------ start: global var ------------------------------------
 # ---- GUI variables ----
 window = Tk()
-window_width = 1400                             # is the width of the tkinter window
+window_width = 1600                             # is the width of the tkinter window
 window_height = 750                             # is the height of the tkinter window
 # explain frame
 ex_f_padx = 10                                  # horizontal pad for the explain frame
@@ -523,10 +525,20 @@ def make_set_ds():
     labels_ds = to_categorical(total_labels_ds,num_classes=len(classes))    # transform label in categorical format
     
     # ---- generete the training and test set ----
-    # split to generate train and test set
-    train_img_temp, test_image, train_label_temp, test_label = train_test_split(image_ds, labels_ds, test_size=test_set_split , random_state=42, shuffle=True)
-    # split to generate validation set from train set
-    train_image, val_img, train_label, val_label = train_test_split(train_img_temp, train_label_temp, test_size=test_set_split , random_state=42, shuffle=True)
+    train_img_temp, test_image, train_label_temp, test_label = train_test_split(image_ds, labels_ds, test_size=test_set_split , random_state=42, shuffle=True)  # split to generate train and test set
+    train_image, val_img, train_label, val_label = train_test_split(train_img_temp, train_label_temp, test_size=test_set_split , random_state=42, shuffle=True) # split to generate validation set from train set
+    
+    # information print
+    print("-------------------- SETS --------------------")
+    print("Make this sets:")
+    print("train_image len:",len(train_image), train_image.shape)
+    print("train_label len",len(train_label), train_label.shape)
+    print("val_img len:",len(val_img), val_img.shape)
+    print("val_label len",len(val_label), val_label.shape)
+    print("test_image len:",len(test_image), test_image.shape)
+    print("test_label len",len(test_label), test_label.shape)
+    print("------------------------------------------------------------")
+    
 
 # ------------------ start: generetor function ------------------
 # explanation: for large dataset with large image or big batch size the memory memory may not be sufficient. 
@@ -584,6 +596,7 @@ def generator_train():
                     label_tensor.append(label_rest_tensor[i])
 
                 yield img_tensor, label_tensor                  # return the last batch
+                
 
 # define generator function to do the validation set
 def generator_val():
@@ -753,7 +766,6 @@ def check_fit_param(number_epoch,num_batch_size,num_early_patience):
                 error_text.set(er_format_epoch_text)    # update error text  
                 return False
             epochs = int_numb_epoch                     # upate the value of batch_size
-            #print("nuovo number of epoch: ",epochs)
         else:                                           
             error_text.set(er_format_epoch_text)        # update error text 
             return False
@@ -767,7 +779,6 @@ def check_fit_param(number_epoch,num_batch_size,num_early_patience):
                 error_text.set(er_format_batch_size_text) # update error text  
                 return False
             batch_size = int_num_batch_size               # upate the value of epochs
-            #print("nuovo batch_size: ",batch_size)
         else:                                           
             error_text.set(er_format_batch_size_text)     # update error text 
             return False
@@ -781,7 +792,6 @@ def check_fit_param(number_epoch,num_batch_size,num_early_patience):
                 error_text.set(er_format_early_text)          # update error text  
                 return False
             early_patience = int_num_early_patience           # upate the value of epochs
-            #print("nuovo early: ",early_patience)
         else:                                           
             error_text.set(er_format_early_text)              # update error text 
             return False
@@ -809,12 +819,13 @@ def make_fit_model(chosen_model,number_epoch,num_batch_size,num_early_patience):
 
     status_model_text.set('Model: working')             # notify the start of the process
     # ---- make the model -----
+    print("------------------------ make model ------------------------")
     if not model_trained:                   # check if there is a ready model or not 
         if chosen_model == "None":                          # check if the CNN model has been selected by user
             error_text.set(er_no_model_specified_text)      # update error text
             return                                          # user must specify a template
         else:
-            print("Prima volta che faccio modello")
+            print("First time, making model...")
             # save the param for next call of this method
             past_param_model["type_model"] = chosen_model         # save type of the model
             past_param_model["epochs"] = epochs                   # save type of the model
@@ -884,8 +895,8 @@ def make_fit_model(chosen_model,number_epoch,num_batch_size,num_early_patience):
                                                                tf.TensorSpec(shape=(batch_size, len(classes)), dtype=tf.float32)))
 
     # ---- fit the model -----
-    
-    checkpoint = ModelCheckpoint(filepath = path_check_point_model+'/weight_seg_'+chosen_model+".hdf5", verbose = 1, save_best_only = True, monitor='val_loss', mode='min') # val_loss, min, val_categorical_accuracy, max
+    print("------------------------ fit model ------------------------")
+    checkpoint = ModelCheckpoint(filepath = path_check_point_model+'/weight_seg_'+chosen_model+".keras", verbose = 1, save_best_only = True, monitor='val_loss', mode='min') # val_loss, min, val_categorical_accuracy, max
     
     eStop = EarlyStopping(patience = early_patience, verbose = 1, restore_best_weights = True, monitor='val_loss')
     
@@ -901,21 +912,18 @@ def make_fit_model(chosen_model,number_epoch,num_batch_size,num_early_patience):
     else:
         val_step = int(math.floor((len(val_img) / batch_size)) + 1)
 
-    #print("Elem in training set: ",len(train_image)," Elem in val set: ", len(val_img)," Elem in test set: ",len(test_image))
-    #print("Step train not truncate: ", train_step, " step train truncate: ", len(train_image) // batch_size , " val step: ",val_step)
-    
+    gpu_memory_usage()                                  # check print
+
     start_time = time.time()                            # start time for training
-    #history = network.fit(train_set,validation_data=val_set, epochs=epochs,steps_per_epoch=train_step, validation_steps = val_step, callbacks = [checkpoint, eStop])     # fit model
-    #history = network.fit(train_set,validation_data=val_set, epochs=epochs, validation_steps = val_step, callbacks = [checkpoint, eStop])     # fit model
-    #history = network.fit(train_set,validation_data=val_set, epochs=epochs,steps_per_epoch=train_step, callbacks = [checkpoint, eStop])     # fit model
-    history = network.fit(train_set,validation_data=val_set, epochs=epochs, callbacks = [checkpoint, eStop])     # fit model
+    history = network.fit(train_set,validation_data=val_set,steps_per_epoch=train_step,validation_steps=val_step, epochs=epochs, callbacks = [checkpoint, eStop])     # fit model
     end_time = time.time()                              # end time for training
-    print(f"Time for training the model: {end_time - start_time} (s)")  # print time to train the model
+    print(f"Time for training the model: ", converti_secondi(end_time - start_time))  # print time to train the model
     
     model_trained = True                                # update status variable
     status_model_text.set('Model: trained')             # notify the end of the process
     
     plot_fit_result(history.history,0)                  # visualize the value for the fit - history.history is a dictionary - call method for plot train result
+    gpu_memory_usage()
     model_evaluate("test")                              # evaluate the model 
     confusion_matrix()                                  # call method to obtain the confusion matrix
     
@@ -1189,6 +1197,8 @@ def confusion_matrix():
     
 # method to check GPU device avaible and setting
 def GPU_check():
+    print("-------------------- TENSORFLOW VERSION --------------------")
+    print(tf.__version__)
     print("-------------------- AVAILABLE HW DEVICES --------------------")
     print("List of devices:")
     print(device_lib.list_local_devices())
@@ -1206,6 +1216,20 @@ def GPU_check():
     print("Used VRAM (GPU memory): ",print("",tf.config.experimental.get_memory_info('GPU:0')['current'] / 10**9))
     print("------------------------------------------------------------")
 
+# utility function to print the VRAM used at the moment
+def gpu_memory_usage():
+    print("-------------------- VRAM USAGE --------------------")
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for i, gpu in enumerate(gpus):
+                info = tf.config.experimental.get_memory_info(f"GPU:{i}")
+                used = info['current'] / (1024**2)  # in MB
+                print(f"GPU {i} VRAM used: {used:.2f} MB")
+        except Exception as e:
+            print("Errore nel monitorare la GPU:", e)
+    print("------------------------------------------------------------")
+
 # funzione di utilità per visualizzare un tempo dato in secondi in minuti, secondi
 def converti_secondi(sec):
     minuti = sec // 60
@@ -1219,7 +1243,7 @@ if __name__ == "__main__":
     window.geometry(str(window_width)+'x'+str(window_height))   # size of the windows
     window.resizable(False, False)                              # window can't be resized
     
-    GPU_check()                    # check if the program can be read the GPU (the library for AI of Nvidia is setting properly)
+    GPU_check()                     # check if the program can be read the GPU (the library for AI of Nvidia is setting properly)
     #set_background_image()         # set background image
     current_view_to_visualise()     # method for visualize the correct GUI
     
