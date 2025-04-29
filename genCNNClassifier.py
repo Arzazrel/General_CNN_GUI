@@ -46,7 +46,8 @@ from net_classes import IfritNet_class as IfritNet
 # ------------------------------------ start: global var ------------------------------------
 # ---- GUI variables ----
 window = Tk()
-window_width = 1600                             # is the width of the tkinter window
+toggle_duplicate_ds = BooleanVar(value=False)   # var to indicate if create a copy of dataset with the indicated shape for the images(default False)
+window_width = 1800                             # is the width of the tkinter window
 window_height = 750                             # is the height of the tkinter window
 # explain frame
 ex_f_padx = 10                                  # horizontal pad for the explain frame
@@ -154,6 +155,13 @@ test_label_ext = []                 # contain the labels of the images choosen a
 test_set_split = 0.2                # test set size as a percentage of the total dataset
 val_set_split = 0.1                 # validation set size as a percentage of the training set
 
+# -------------------------- start: dataset_information_variable --------------------------
+# ---- status variable for dataset information ----
+del_corrupt_img = False                         # variable that indicate to the program whether it should delete any corrupted images in the dataset
+ds_analysing = False                            # indicate if the pogram is analysing the dataset for tak ethe information for the report
+RGB_mean_dict = {}                              # contain for each class the value for the color Blue , Green, Red. For a quick comparison of the colour distribution in the various classes and dataset.
+                                                # the dictionary will have a key for each class and the corresponding value will be an array of three values.
+# -------------------------- end: dataset_information_variable --------------------------
 # ------------------------------------ end: global var ------------------------------------
 
 # ------------------------------------ start: methods for GUI ------------------------------------
@@ -192,24 +200,36 @@ def current_view_to_visualise():
     
     # -- start: row 0 --
     # ---- for image size -- start ----
+    path_ds_label = Label(top_frame, text="DS name (in 'dataset' folder): ")    # label for the name of the DS
+    path_ds_label.grid(row=0, column=0, sticky="W", padx=5, pady=10) 
+    
+    path_ds_input = Entry(top_frame, width=15)                                  # entry for the width of the images in input to CNN 
+    path_ds_input.grid(row=0, column=1, sticky="WE", padx=5)
+    
     image_size_label = Label(top_frame, text="Input image size: ")              # label for image size of the CNN model (image of the input layer)
-    image_size_label.grid(row=0, column=0, sticky="W", padx=5, pady=10) 
+    image_size_label.grid(row=0, column=2, sticky="W", padx=5, pady=10) 
     
     image_width_input = Entry(top_frame, width=15)                              # entry for the width of the images in input to CNN 
-    image_width_input.grid(row=0, column=1, sticky="WE", padx=5)
+    image_width_input.grid(row=0, column=3, sticky="WE", padx=5)
     
     image_height_input = Entry(top_frame, width=15)                             # entry for the height of the images in input to CNN 
-    image_height_input.grid(row=0, column=2, sticky="WE", padx=5)
+    image_height_input.grid(row=0, column=4, sticky="WE", padx=5)
     
     image_channel_input = Entry(top_frame, width=15)                            # entry for the channels of the images in input to CNN
-    image_channel_input.grid(row=0, column=3, sticky="WE", padx=5)
+    image_channel_input.grid(row=0, column=5, sticky="WE", padx=5)
     
     def_image_size_label = Label(top_frame, text="Default size: (" + str(def_img_width) + "," + str(def_img_height) + "," + str(def_img_channel) + ")")              # label for image size of the CNN model (image of the input layer)
-    def_image_size_label.grid(row=0, column=4, sticky="W", padx=5, pady=10) 
+    def_image_size_label.grid(row=0, column=6, sticky="W", padx=5, pady=10) 
     # ---- for image size -- end ----
     
+    button_analyse_ds = Button(top_frame, text="Analyse DS", command=lambda: btn_analyse_ds(path_ds_input.get(), image_width_input.get(),image_height_input.get(),image_channel_input.get()))   # button to load the whole dataset
+    button_analyse_ds.grid(row=0, column=8, sticky="W", padx=5, pady=10)
+    
+    toggle = Checkbutton(top_frame, text="Resized DS copy", variable=toggle_duplicate_ds) # checkbox for the copy of dataset
+    toggle.grid(row=0, column=9, sticky="W", padx=5, pady=10)
+    
     btn_load_ds = Button(top_frame, text="Load image DS", command=lambda: btn_load_ds_method(image_width_input.get(),image_height_input.get(),image_channel_input.get()))   # button to load the whole dataset
-    btn_load_ds.grid(row=0, column=6, sticky="W", padx=5, pady=10)
+    btn_load_ds.grid(row=0, column=10, sticky="W", padx=5, pady=10)
     
     model_label = Label(top_frame, textvariable=status_model_text)              # label for the status of DS (missing,loading,loaded)
     model_label.grid(row=0, column=11, sticky="W", padx=5, pady=10)  
@@ -408,16 +428,15 @@ def btn_load_ext_image():
 # ------------------------------------ start: methods for DS ------------------------------------
 # activate a thread to load the ds, in this way the GUI will not be blocked
 def btn_load_ds_method(im_width,im_height,im_channel):
-    global ds_downloading                       # refer to global variables
+    global ds_downloading,ds_analysing          # refer to global variables
     error_text.set('')                          # cleans error text
-    if not ds_downloading:                      # check if program is already downloading the dataset
+    if not (ds_downloading or ds_analysing):    # check if program is already downloading the dataset
         ds_downloading = True                   # set control variable
         t = Thread(target=import_image_from_ds, args=(path_dir_ds,im_width,im_height,im_channel,))
         t.start()                               # starts thread for import dataset
     else:
         error_text.set(er_down_ds_text)         # update error text 
         
-    
 # method for import the whole dataset, path_ds is the path of the dataset to load. -- P.S. for more detail please read note 0 (at the end of the file)  
 def import_image_from_ds(path_ds,im_width,im_height,im_channel):
     global total_image_ds, total_labels_ds,ds_downloading,classes   # refer to global variables
@@ -433,7 +452,9 @@ def import_image_from_ds(path_ds,im_width,im_height,im_channel):
         return  
 
     status_DS_text.set('Image DataSet: loading')    # notify the start of the import
-  
+    
+    print("-------------------- READING DS --------------------")
+    print("Read the DS: ",path_ds)                  # status print
     # take the images and labels form DataSet
     for folder in list_dir_ds:                      # for each folder in DS
         print("Read the folder: ",folder)           # status print
@@ -457,6 +478,7 @@ def import_image_from_ds(path_ds,im_width,im_height,im_channel):
     print("total_image_ds",len(total_image_ds), total_image_ds.shape)
     print("total_labels_ds",len(total_labels_ds), total_labels_ds.shape)
     print("Requied memory for images ds: ",total_image_ds.size * total_image_ds.itemsize / 10**6," MB")
+    print("------------------------------------------------------------")
     
     status_DS_text.set('Image DataSet: downloaded')             # notify the end of the process
     error_text.set('')                                          # cleans error text
@@ -464,9 +486,9 @@ def import_image_from_ds(path_ds,im_width,im_height,im_channel):
     
 # activate a thread to load the extern test ds, in this way the GUI will not be blocked
 def btn_load_ext_ds_method(im_width,im_height,im_channel):
-    global ext_ds_downloading                   # refer to global variables
+    global ext_ds_downloading,ds_analysing      # refer to global variables
     error_text.set('')                          # cleans error text
-    if not ext_ds_downloading:                  # check if program is already downloading the dataset
+    if not (ext_ds_downloading or ds_analysing):# check if program is already downloading the dataset
         ext_ds_downloading = True               # set control variable
         t = Thread(target=import_image_from_ext_test_ds, args=(path_dir_test_ds,im_width,im_height,im_channel))
         t.start()                               # starts thread for import dataset
@@ -516,6 +538,200 @@ def import_image_from_ext_test_ds(path_ds,im_width,im_height,im_channel):
     error_text.set('')                                              # cleans error text
     ext_ds_downloading = False                                      # reset control variable
     
+# activate a thread to load the ds, in this way the GUI will not be blocked
+def btn_analyse_ds(folder_name,im_width,im_height,im_channel):
+    global ds_downloading,ds_analysing          # refer to global variables
+    error_text.set('')                          # cleans error text
+    if not (ds_downloading or ds_analysing):    # check if program is already downloading the dataset
+        ds_analysing = True                     # set control variable
+        t = Thread(target=analyse_ds, args=(folder_name,im_width,im_height,im_channel,))
+        t.start()                               # starts thread for import dataset
+        check_thread(t, window)                 # controlla periodicamente se ha finito
+    else:
+        error_text.set(er_down_ds_text)         # update error text 
+     
+# method to check if the thread for analysing DS is done or not     
+def check_thread(thread, root):
+    if thread.is_alive():
+        root.after(100, lambda: check_thread(thread, root))   # ricontrolla dopo 100 ms
+    else:
+        show_plot_analysing()                           # funzione che vuoi eseguire nel thread principale
+        status_DS_text.set('Image DataSet: analysed')   # notify the end of the analysing
+
+def show_plot_analysing():
+    # show a plot that displays BRG bar gram for each class
+    for k,v in RGB_mean_dict.items():                                   # for to slide the sorted dict
+        color = ["Blue", "Green", "Red"]                                # laber for bar in the bar gram                        
+        x_pos = np.arange(len(color))
+        plt.bar(x_pos, v, align='center')
+        plt.xticks(x_pos, color)
+        plt.ylabel('Value')
+        plt.xlabel('Color')
+        plt.title(k)                                                    # the title of the plot is the class 
+        plt.show()                                                      # shows bar grams
+       
+# method for import the whole test dataset, new_path_ds is the path of the dataset to load. -- P.S. same detail of the 'import_image_from_ds' method in Note 0
+def analyse_ds(folder_name,im_width,im_height,im_channel):
+    global ds_analysing, RGB_mean_dict
+    # variables
+    img_number = 0                                  # total number of images in the dataset
+    classes = {}                                    # dictionary containing all the classes in the dataset and the number of images of each class
+    format_dict = {}                                # dictionary containing all the image formats in the dataset and for each of them the number of images
+    shape_dict = {}                                 # dictionary containing all the image shapes in the dataset and for each of them the number of images
+    top_shape_images = 10                           # the top frequent shapes for the images in the dataset
+    corrupt_images = []                             # array that will contain the name of the corrupted images that are in the dataset
+    
+    new_path_ds = path_dir_ds   
+    
+    # take the list of the folders that are in the DS, one folder for each class
+    if is_valid_folder_name(folder_name) and os.path.isdir(folder): # check if the user write a valide name for the DS and there is a folder
+        new_path_ds = os.path.join("Dataset",folder_name)
+        list_dir_ds = os.listdir(new_path_ds) 
+    else:                                           # take default ds path
+        new_path_ds = path_dir_ds
+        list_dir_ds = os.listdir(path_dir_ds)    
+
+    if not check_image_size_param(im_width,im_height,im_channel): # check parameters of image size
+        return  
+    
+    status_DS_text.set('Image DataSet: analysing')  # notify the start of the analysing
+    print("-------------------- ANALYSING DS --------------------")
+    print(" -- Start time analyse the DS: ", path_dir_ds, " --")
+    print("Image size for resize is: (",img_width,",",img_height,",",img_channel,")")
+    im_ds = []                  # tensor that contain the images of one batch from the set
+    lab_ds = []                 # tensor that contain the labels of one batch from the set
+    im_tens = []                # tensor that contain the residual images (case where size/batch_size has a rest) from the set                                 
+    
+    # time variables
+    resize_time = 0                                 # set the time needed to resize all the images in the DS
+    save_path_time = 0                              # set the time needed to save the path for all the images in the DS
+    tens_time = 0                                   # set the time needed to convert in tensor and add to list for all the images in the DS
+    
+    start_time = time.time()                        # start time for analysing read and resize DS
+    for folder in list_dir_ds:                      # for each folder in DS
+        print("Analyse the folder: ",folder)        # status print
+        p = os.path.join(new_path_ds,folder)        # path of each folder
+        for filename in os.listdir(p):              # analyse all images
+            img = cv2.imread(os.path.join(p,filename))  # take current iamge
+            if img is not None:                         # check image taken
+                temp_start = time.time()
+                im_ds.append(os.path.join(p,filename))  # add title of the image to total_image_ds
+                temp_end = time.time()
+                save_path_time += (temp_end - temp_start)
+                
+                #check if the image is in the correct shape for the CNN (shape specified in the global variables)
+                if img.shape != (img_width, img_height, img_channel):    
+                    temp_start = time.time()
+                    dim = (img_height ,img_width)
+                    img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)       # resize the image
+                    temp_end = time.time()
+                    resize_time += (temp_end - temp_start)
+                    
+                    temp_start = time.time()
+                    img = img.astype('float32') / 255                               # normalization
+                    im_tens.append(tf.convert_to_tensor(img, dtype=tf.float32))     # add new element and convert to TF tensors
+                    temp_end = time.time()
+                    tens_time += (temp_end - temp_start)
+                else:
+                    temp_start = time.time()
+                    img = img.astype('float32') / 255                               # normalization
+                    im_tens.append(tf.convert_to_tensor(img, dtype=tf.float32))     # add new element and convert to TF tensors
+                    temp_end = time.time()
+                    tens_time += (temp_end - temp_start)
+            else:
+                 print("Image loading error in generator_train...",img_path)
+                 
+    end_time = time.time()                          # end time for analysing read and resize DS
+    total_time = end_time - start_time
+    print(f"Time to read and resize the images of DS: ", converti_secondi(total_time))  # print time
+    percent = (resize_time / total_time) * 100
+    print(f"Time to resize the images of DS: ", converti_secondi(resize_time),f" {percent:.2f}% of total time.")                        # print time
+    percent = (save_path_time / total_time) * 100
+    print(f"Time to save the path of the images of DS: ", converti_secondi(save_path_time),f" {percent:.2f}% of total time.")           # print time
+    percent = (tens_time / total_time) * 100
+    print(f"Time to convert and add to the tensor of the images of DS: ", converti_secondi(tens_time),f" {percent:.2f}% of total time.")# print time
+    
+    print("\n -- Start analyse the DS: ", path_dir_ds, " --")
+    # slide the images and labels form DataSet
+    for folder in list_dir_ds:                      # for each folder in DS
+        print("Analyse the folder: ",folder)        # status print
+        if classes.get(str(folder)) is None:        # check if the classes is already registered
+            classes[str(folder)] = 0                # set counter equal 0
+        
+        p = os.path.join(new_path_ds,folder)            # path of each folder
+        
+        for filename in os.listdir(p):                      # for each images on the current folder
+            img_number +=1                                  # update images counter
+            classes[str(folder)] += 1                       # update images in classes counter
+            # I get the image format, I assume that there are no dots in the name of the images
+            split_name = str(filename).split('.')           # split the filename
+            format_name = split_name[-1]                    # get the format
+            # check format
+            if format_dict.get(format_name) is None:     # check if the format is already registered
+                format_dict[format_name] = 1             # set counter equal 0
+            else:
+                format_dict[format_name] += 1            # update counter    
+            
+            img = cv2.imread(os.path.join(p,filename))      # take current iamge
+            if img is not None:                             # check image taken
+                # check shape
+                if shape_dict.get(str(img.shape)) is None:     # check if the shape is already registered
+                    shape_dict[str(img.shape)] = 1             # set counter equal 0
+                else:
+                    shape_dict[str(img.shape)] += 1            # update counter  
+                # see the color contribution
+                # for each image calculate the mean of the value of the Red, Green and Blue
+                red_mean = img[:,:,2].mean()
+                green_mean = img[:,:,1].mean()
+                blue_mean = img[:,:,0].mean()
+                if RGB_mean_dict.get(str(folder)) is None:                              # check if there are already value for this class
+                    RGB_mean_dict[str(folder)] = [blue_mean,green_mean,red_mean]        # set with value
+                else:
+                    temp_RGB = RGB_mean_dict[str(folder)]
+                    new_RGB = [temp_RGB[0] + blue_mean, temp_RGB[1] + green_mean , temp_RGB[2] + red_mean ]
+                    RGB_mean_dict[str(folder)] = new_RGB                                # update value
+            else:                                           # corrupted image
+                corrupt_images.append(str(filename))        # update 
+                if del_corrupt_img:                         # check if the porgram has to delete the corrupted images or not
+                    os.remove(os.path.join(p,filename))     # delete the images
+
+    # Dataset characteristics output
+    print("The dataset characteristics are:")
+    print("- The dataset has " , img_number, " images.")                                      # total number of images in dataset
+    print("- The number of classes are ",len(classes.keys()), ". ", list(classes.keys()))     # number of classes and name of each class
+    
+    print("List of the classes and number of related images for each one:")
+    sorted_class_dict = dict(sorted(classes.items(), key=lambda x: x[1], reverse=True))     # sort the classes dictionary. reverse = true the biggest class will be the first                                                                            # initialize the counter
+    for k,v in sorted_class_dict.items():                                                   # for to slide the sorted dict
+        print('- ', k, ': ', v)                                                                   # print key and value       
+
+    if len(corrupt_images) != 0:                                                            #check if there are corrupted images
+        print("There are ", len(corrupt_images)," corrupted images.\n",corrupt_images)
+
+    print("The number of different images shapes are ",len(shape_dict.keys()))              # number of shapes and images number for each shape
+    
+    # for to see the top k shape image with k as top_shape_images
+    sorted_shape_dict = dict(sorted(shape_dict.items(), key=lambda x: x[1], reverse=True))  # sort the shape_dictionary. reverse = true the most used shape will be the first
+    count = 0                                                                               # initialize the counter
+    for k,v in sorted_shape_dict.items():                                                   # for to slide the sorted dict
+        if count >= top_shape_images:                                                       # check if is out of band for top k
+            break
+        print('- ', k, ': ', v)                                                                   # print key and value
+        count +=1                                                                           # update counter   
+
+    print("The number of different images format are ",len(format_dict.keys()))             # number of format and images number for each format
+    # for to see the top k format image with k as top_shape_images
+    sorted_format_dict = dict(sorted(format_dict.items(), key=lambda x: x[1], reverse=True))# sort the shape_dictionary. reverse = true the most used shape will be the first
+    count = 0                                                                               # initialize the counter
+    for k,v in sorted_format_dict.items():                                                  # for to slide the sorted dict
+        if count >= top_shape_images:                                                       # check if is out of band for top k
+            break
+        print('- ', k, ': ', v)                                                                   # print key and value
+        count +=1                                                                           # update counter  
+        
+    ds_analysing = False                # reset the control var
+    print("------------------------------------------------------------")
+
 # method for preprocessing and split the dataset
 def make_set_ds():
     global test_image, test_label, train_image, train_label, val_img,val_label          # global variables references
@@ -538,7 +754,8 @@ def make_set_ds():
     print("test_image len:",len(test_image), test_image.shape)
     print("test_label len",len(test_label), test_label.shape)
     print("------------------------------------------------------------")
-    
+
+# ------------------------------------ end: methods for DS ------------------------------------
 
 # ------------------ start: generetor function ------------------
 # explanation: for large dataset with large image or big batch size the memory memory may not be sufficient. 
@@ -572,7 +789,7 @@ def generator_train():
                 img = img.astype('float32') / 255                                       # normalization
                 img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))          # add new element and convert to TF tensors
         else:
-             print("Image loading error in generator_train...",img_path)
+             print("Image loading error in analysing DS...",img_path)
         
         # add new element and convert to TF tensors
         label_tensor.append(tf.convert_to_tensor(label, dtype=tf.float32))
@@ -753,6 +970,22 @@ def check_image_size_param(height,width,channel):
     
     return True                                         # all parameter are ok
     
+def is_valid_folder_name(name):
+    # Controlla se il nome è vuoto o solo spazi
+    if not name.strip():
+        return False
+
+    # Caratteri vietati per Windows
+    invalid_chars = '<>:"/\\|?*'
+    if any(char in name for char in invalid_chars):
+        return False
+
+    # Riservati su Windows (opzionale)
+    reserved = {'CON', 'PRN', 'AUX', 'NUL'} | {f'COM{i}' for i in range(1, 10)} | {f'LPT{i}' for i in range(1, 10)}
+    if name.upper() in reserved:
+        return False
+
+    return True
 
 # method for check the fit parameter insert by user. return 'True' whether the parameter are correct, 'False' is the parameter aren't correct
 def check_fit_param(number_epoch,num_batch_size,num_early_patience):
@@ -883,16 +1116,16 @@ def make_fit_model(chosen_model,number_epoch,num_batch_size,num_early_patience):
     # create TRAIN SET using generator function and specifying shapes and dtypes
     train_set = tf.data.Dataset.from_generator(generator_train, 
                                              output_signature=(tf.TensorSpec(shape=(batch_size ,img_width , img_height , img_channel), dtype=tf.float32),
-                                                               tf.TensorSpec(shape=(batch_size, len(classes)), dtype=tf.float32)))
+                                                               tf.TensorSpec(shape=(batch_size, len(classes)), dtype=tf.float32))).repeat()
     
     # create VALIDATION SET using generator function and specifying shapes and dtypes
     val_set = tf.data.Dataset.from_generator(generator_val, 
                                              output_signature=(tf.TensorSpec(shape=(batch_size ,img_width , img_height , img_channel), dtype=tf.float32),
-                                                               tf.TensorSpec(shape=(batch_size, len(classes)), dtype=tf.float32)))
+                                                               tf.TensorSpec(shape=(batch_size, len(classes)), dtype=tf.float32))).repeat()
     # create TEST SET using generator function and specifying shapes and dtypes
     test_set = tf.data.Dataset.from_generator(generator_test, 
                                              output_signature=(tf.TensorSpec(shape=(batch_size ,img_width , img_height , img_channel), dtype=tf.float32),
-                                                               tf.TensorSpec(shape=(batch_size, len(classes)), dtype=tf.float32)))
+                                                               tf.TensorSpec(shape=(batch_size, len(classes)), dtype=tf.float32))).repeat()
 
     # ---- fit the model -----
     print("------------------------ fit model ------------------------")
@@ -1234,7 +1467,7 @@ def gpu_memory_usage():
 def converti_secondi(sec):
     minuti = sec // 60
     secondi = sec % 60
-    return f"{minuti}m {secondi}s"
+    return f"{minuti}m {secondi:.2f}s"
 # ------------------------------------ end: utility method ------------------------------------
 
 # ------------------------------------ main ------------------------------------        
