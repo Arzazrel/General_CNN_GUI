@@ -48,6 +48,7 @@ from net_classes import IfritNet_class as IfritNet
 # ---- GUI variables ----
 window = Tk()
 toggle_duplicate_ds = BooleanVar(value=False)   # var to indicate if create a copy of dataset with the indicated shape for the images(default False)
+toggle_grey_scale = BooleanVar(value=False)     # var to indicate if convert or not in greyscale images a copy of dataset with the indicated shape for the images(default False)
 window_width = 1800                             # is the width of the tkinter window
 window_height = 750                             # is the height of the tkinter window
 # explain frame
@@ -227,11 +228,14 @@ def current_view_to_visualise():
     button_analyse_ds = Button(top_frame, text="Analyse DS", command=lambda: btn_analyse_ds(path_ds_input.get(), image_width_input.get(),image_height_input.get(),image_channel_input.get()))   # button to load the whole dataset
     button_analyse_ds.grid(row=0, column=8, sticky="W", padx=5, pady=10)
     
-    toggle = Checkbutton(top_frame, text="Resized DS copy", variable=toggle_duplicate_ds) # checkbox for the copy of dataset
+    toggle = Checkbutton(top_frame, text="Resized DS copy", variable=toggle_duplicate_ds)       # checkbox for the copy of dataset
     toggle.grid(row=0, column=9, sticky="W", padx=5, pady=10)
     
+    toggle_gs = Checkbutton(top_frame, text="Greyscale DS copy", variable=toggle_grey_scale)    # checkbox for the copy of dataset
+    toggle_gs.grid(row=0, column=10, sticky="W", padx=5, pady=10)
+    
     btn_load_ds = Button(top_frame, text="Load image DS", command=lambda: btn_load_ds_method(image_width_input.get(),image_height_input.get(),image_channel_input.get()))   # button to load the whole dataset
-    btn_load_ds.grid(row=0, column=10, sticky="W", padx=5, pady=10)
+    btn_load_ds.grid(row=0, column=11, sticky="W", padx=5, pady=10)
      
     # -- end: row 0 --
     
@@ -450,7 +454,7 @@ def btn_load_ds_method(im_width,im_height,im_channel):
         
 # method for import the whole dataset, path_ds is the path of the dataset to load. -- P.S. for more detail please read note 0 (at the end of the file)  
 def import_image_from_ds(path_ds,im_width,im_height,im_channel):
-    global total_image_ds, total_labels_ds,ds_downloading,classes,toggle_duplicate_ds,res_copy_ds_name   # refer to global variables
+    global total_image_ds, total_labels_ds,ds_downloading,classes,toggle_duplicate_ds,res_copy_ds_name,img_channel   # refer to global variables
     list_dir_ds = os.listdir(path_ds)               # list of the folders that are in the DS, one folder for each class
     
     # check if the total ds is already loaded
@@ -461,6 +465,11 @@ def import_image_from_ds(path_ds,im_width,im_height,im_channel):
 
     if not check_image_size_param(im_width,im_height,im_channel): # check parameters of image size
         return  
+        
+    # check the size of the channel in case of greyscale
+    if toggle_grey_scale.get():
+        img_channel = 1                 # the number of channel must be 1
+        toggle_duplicate_ds.set(True)   # set the var to create the copy of DS
 
     if toggle_duplicate_ds.get():
         print("Have to duplicate the DS resized.")  
@@ -496,6 +505,10 @@ def import_image_from_ds(path_ds,im_width,im_height,im_channel):
             if img is not None:                             # check image taken
                 # check if is the normal case of the case of the creation of the resized copy DS
                 if toggle_duplicate_ds.get():   # resized copy case
+                    # check if there is a need to convert in greyscale
+                    if toggle_grey_scale.get():
+                        img = cv2.imread(percorso_img, cv2.IMREAD_GRAYSCALE)    # convert in greyscale
+                    
                     # check if there is a need to resize
                     if img.shape != (img_height, img_width, img_channel):       
                         dim = (img_height, img_width)
@@ -822,7 +835,11 @@ def generator_train():
         # take one image and the corresponding labels
         img_path = train_image[idx]                              
         label = train_label[idx]
-        img = cv2.imread(img_path)    # take current iamge
+        # check if the DS is in greyscale
+        if toggle_grey_scale.get():
+            img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)    # take current image (greyscale)
+        else:
+            img = cv2.imread(img_path)                          # take current iamge (RGB)
         if img is not None:                             # check image taken
             #check if the image is in the correct shape for the CNN (shape specified in the global variables)
             if img.shape != (img_width, img_height, img_channel):       
@@ -877,7 +894,11 @@ def generator_val():
         # take one image and the corresponding mask
         img_path = val_img[idx]
         label = val_label[idx]
-        img = cv2.imread(img_path)    # take current iamge
+        # check if the DS is in greyscale
+        if toggle_grey_scale.get():
+            img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)    # take current image (greyscale)
+        else:
+            img = cv2.imread(img_path)                          # take current iamge (RGB)
         if img is not None:                             # check image taken
             #check if the image is in the correct shape for the CNN (shape specified in the global variables)
             if img.shape != (img_width, img_height, img_channel):       
@@ -930,7 +951,11 @@ def generator_test():
         # extract one image and the corresponding mask
         img_path = test_image[idx]
         label = test_label[idx]
-        img = cv2.imread(img_path)    # take current iamge
+        # check if the DS is in greyscale
+        if toggle_grey_scale.get():
+            img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)    # take current image (greyscale)
+        else:
+            img = cv2.imread(img_path)                          # take current iamge (RGB)
         if img is not None:                             # check image taken
             #check if the image is in the correct shape for the CNN (shape specified in the global variables)
             if img.shape != (img_width, img_height, img_channel):       
