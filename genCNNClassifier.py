@@ -13,6 +13,7 @@ import numpy as np
 import random
 import time
 import math
+import shutil
 # for model
 import tensorflow as tf
 from tensorflow import keras
@@ -123,6 +124,7 @@ path_dir_ds = os.path.join("Dataset","polmonite")           # folder in which th
 path_dir_test_ds = os.path.join("Dataset","pkm_test_ds")    # folder in which there are the image ds for testing
 path_dir_model = "Model"                                    # folder in which there are saved the CNN model
 path_check_point_model = os.path.join(path_dir_model,"train_hdf5")  # folder in which there are saved the checkpoint for the model training
+res_copy_ds_name = "res_ds_copy"                # the name of the folder to contain the resized copy of the dataset (case of timing optimization)
 # ---- model variables ----
 network = None                                  # contain the CNN model, default value is None
 truncate_set = False                            # variable which indicates whether the sets (train, test,val) must be truncate or not when divided to batch_size
@@ -230,12 +232,7 @@ def current_view_to_visualise():
     
     btn_load_ds = Button(top_frame, text="Load image DS", command=lambda: btn_load_ds_method(image_width_input.get(),image_height_input.get(),image_channel_input.get()))   # button to load the whole dataset
     btn_load_ds.grid(row=0, column=10, sticky="W", padx=5, pady=10)
-    
-    model_label = Label(top_frame, textvariable=status_model_text)              # label for the status of DS (missing,loading,loaded)
-    model_label.grid(row=0, column=11, sticky="W", padx=5, pady=10)  
-
-    dataset_label = Label(top_frame, textvariable=status_DS_text)               # label for the status of DS (missing,loading,loaded)
-    dataset_label.grid(row=0, column=12, sticky="W", padx=5, pady=10)    
+     
     # -- end: row 0 --
     
     # -- start: row 1 --
@@ -251,35 +248,49 @@ def current_view_to_visualise():
     btn_save_model = Button(top_frame, text="Save CNN model", command=lambda: save_model(name_model_input.get()))   # button to save the CNN model
     btn_save_model.grid(row=1, column=9, sticky="W", padx=5, pady=10)
 
-    btn_fit_model = Button(top_frame, text="Fit CNN model", command=lambda: make_fit_model(CNN_menu_text.get(),number_epochs_input.get(),batch_size_input.get(),early_stopping_input.get()))      # button to fit CNN model
+    btn_fit_model = Button(top_frame, text="Fit CNN model", command=lambda: make_fit_model(CNN_menu_text.get(),number_epochs_input.get(),batch_size_input.get(),early_stopping_input.get(),num_train_input.get()))      # button to fit CNN model
     btn_fit_model.grid(row=1, column=12, sticky="W", padx=5, pady=10)
     # -- end: row 1 --
     
     # -- start: row 2 --
-    name_model_label = Label(top_frame, text="Select CNN model:")                   # label to explain the choice of CNN models
+    name_model_label = Label(top_frame, text="Select CNN model:")           # label to explain the choice of CNN models
     name_model_label.grid(row=2, column=0, sticky="W", padx=5, pady=10) 
     
-    CNN_menu = OptionMenu(top_frame, CNN_menu_text,*CNN_model_text)                 # creating select menu for CNN model
+    CNN_menu = OptionMenu(top_frame, CNN_menu_text,*CNN_model_text)         # creating select menu for CNN model
     CNN_menu.grid(row=2, column=1,padx=10)
     
-    epoch_label = Label(top_frame, text="Number of epoch:")                         # label to explain the number of epoch
+    epoch_label = Label(top_frame, text="Number of epoch:")                 # label to explain the number of epoch
     epoch_label.grid(row=2, column=2, sticky="W", padx=5, pady=10) 
     
-    number_epochs_input = Entry(top_frame, width=10)                                             # entry for the number of epochs
+    number_epochs_input = Entry(top_frame, width=10)                        # entry for the number of epochs
     number_epochs_input.grid(row=2, column=3, sticky="WE", padx=5)
 
-    batch_size_label = Label(top_frame, text="Batch size:")                         # label to explain the batch size
+    batch_size_label = Label(top_frame, text="Batch size:")                 # label to explain the batch size
     batch_size_label.grid(row=2, column=4, sticky="W", padx=5, pady=10) 
     
-    batch_size_input = Entry(top_frame, width=10)                                             # entry for the number batch size
+    batch_size_input = Entry(top_frame, width=10)                           # entry for the number batch size
     batch_size_input.grid(row=2, column=5, sticky="WE", padx=5)
     
-    early_stopping_label = Label(top_frame, text="Early patience:")                         # label to explain the early patience
+    early_stopping_label = Label(top_frame, text="Early patience:")         # label to explain the early patience
     early_stopping_label.grid(row=2, column=6, sticky="W", padx=5, pady=10) 
     
-    early_stopping_input = Entry(top_frame, width=10)                                             # entry for the number of early patience
+    early_stopping_input = Entry(top_frame, width=10)                       # entry for the number of early patience
     early_stopping_input.grid(row=2, column=7, sticky="WE", padx=5)
+    
+    num_train_label = Label(top_frame, text="Number of train to do:")       # label to explain the number of train to do (statistic test)
+    num_train_label.grid(row=2, column=8, sticky="W", padx=5, pady=10) 
+    
+    num_train_input = Entry(top_frame, width=10)                            # entry for the number of train to do (statistic test)
+    num_train_input.grid(row=2, column=9, sticky="WE", padx=5)
     # -- end: row 2 --
+    
+    # -- start: row 3 -- status variable --
+    model_label = Label(top_frame, textvariable=status_model_text)              # label for the model (missing,loading,loaded)
+    model_label.grid(row=3, column=2, sticky="W", padx=5, pady=10)  
+
+    dataset_label = Label(top_frame, textvariable=status_DS_text)               # label for the status of DS (missing,loading,loaded)
+    dataset_label.grid(row=3, column=3, sticky="W", padx=5, pady=10)   
+    # -- end: row 3 --
     # ---- end: top frame ----
     
     # ---- start: image frame ----
@@ -439,7 +450,7 @@ def btn_load_ds_method(im_width,im_height,im_channel):
         
 # method for import the whole dataset, path_ds is the path of the dataset to load. -- P.S. for more detail please read note 0 (at the end of the file)  
 def import_image_from_ds(path_ds,im_width,im_height,im_channel):
-    global total_image_ds, total_labels_ds,ds_downloading,classes   # refer to global variables
+    global total_image_ds, total_labels_ds,ds_downloading,classes,toggle_duplicate_ds,res_copy_ds_name   # refer to global variables
     list_dir_ds = os.listdir(path_ds)               # list of the folders that are in the DS, one folder for each class
     
     # check if the total ds is already loaded
@@ -451,6 +462,21 @@ def import_image_from_ds(path_ds,im_width,im_height,im_channel):
     if not check_image_size_param(im_width,im_height,im_channel): # check parameters of image size
         return  
 
+    if toggle_duplicate_ds.get():
+        print("Have to duplicate the DS resized.")  
+        # check the folder to contain the resized copy of DS
+        parent_path = os.path.dirname(path_ds)                  # calculate the parent path
+        path_copy = os.path.join(parent_path,res_copy_ds_name)  # create the copy folder in the same folder o the original ds
+        if os.path.exists(path_copy):       # check if exist
+            shutil.rmtree(path_copy)             # erase all the data in the folder
+            print("Copy ds folder present, erase it.")
+        else:
+            print("Copy ds folder not present.")
+        os.makedirs(path_copy)                   # create the folder
+        print("Create the copy ds folder.")
+    else:
+        print("Don't have to duplicate the DS resized.")
+
     status_DS_text.set('Image DataSet: loading')    # notify the start of the import
     
     print("-------------------- READING DS --------------------")
@@ -460,13 +486,31 @@ def import_image_from_ds(path_ds,im_width,im_height,im_channel):
         print("Read the folder: ",folder)           # status print
         classes.append(str(folder))                 # update classes
         index = classes.index(str(folder))          # take index of classes, is teh label of this class
-        p = os.path.join(path_ds,folder)            # path of each folder
+        p = os.path.join(path_ds,folder)            # path of each folder (of the original folder)
+        p_copy = os.path.join(path_copy, folder)    # path of each folder (for the DS copy folder)
+        if toggle_duplicate_ds.get():               # resized copy case
+            os.makedirs(p_copy, exist_ok=True)          # crea sottocartella nella copia
         # creating a collection with the available images
         for filename in os.listdir(p):                      # for each images on the current folder
             img = cv2.imread(os.path.join(p,filename))      # take current iamge
             if img is not None:                             # check image taken
-                total_image_ds.append(os.path.join(p,filename)) # add title of the image to total_image_ds
-                total_labels_ds.append(index)               # add correlated label to total_lael_ds
+                # check if is the normal case of the case of the creation of the resized copy DS
+                if toggle_duplicate_ds.get():   # resized copy case
+                    # check if there is a need to resize
+                    if img.shape != (img_height, img_width, img_channel):       
+                        dim = (img_height, img_width)
+                        img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)   # resize the image
+                    
+                    img = img.astype('float32') / 255                               # normalization
+                    output_path = os.path.join(p_copy, filename)    # create the path of the image in the copy DS
+                    img_to_save = (img * 255).astype('uint8')       # convert to uint8 for the saving
+                    cv2.imwrite(output_path, img_to_save)           # write the image
+                    
+                    total_image_ds.append(output_path)              # add title of the image to total_image_ds
+                    total_labels_ds.append(index)                   # add correlated label to total_lael_ds
+                else:                           # normal case
+                    total_image_ds.append(os.path.join(p,filename)) # add title of the image to total_image_ds
+                    total_labels_ds.append(index)                   # add correlated label to total_lael_ds
             else:
                 print("Image loading error...",filename)
     
@@ -622,7 +666,7 @@ def analyse_ds(folder_name,im_width,im_height,im_channel):
                 #check if the image is in the correct shape for the CNN (shape specified in the global variables)
                 if img.shape != (img_width, img_height, img_channel):    
                     temp_start = time.time()
-                    dim = (img_height ,img_width)
+                    dim = (img_width ,img_height)
                     img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)       # resize the image
                     temp_end = time.time()
                     resize_time += (temp_end - temp_start)
@@ -735,14 +779,15 @@ def analyse_ds(folder_name,im_width,im_height,im_channel):
 # method for preprocessing and split the dataset
 def make_set_ds():
     global test_image, test_label, train_image, train_label, val_img,val_label          # global variables references
+    seed = random.randint(1, 42)            # calculate the seed
     
     # ----- preprocessing and reshape ----
     image_ds = np.array(total_image_ds)
     labels_ds = to_categorical(total_labels_ds,num_classes=len(classes))    # transform label in categorical format
     
     # ---- generete the training and test set ----
-    train_img_temp, test_image, train_label_temp, test_label = train_test_split(image_ds, labels_ds, test_size=test_set_split , random_state=42, shuffle=True)  # split to generate train and test set
-    train_image, val_img, train_label, val_label = train_test_split(train_img_temp, train_label_temp, test_size=test_set_split , random_state=42, shuffle=True) # split to generate validation set from train set
+    train_img_temp, test_image, train_label_temp, test_label = train_test_split(image_ds, labels_ds, test_size=test_set_split , random_state=seed, shuffle=True)    # split to generate train and test set
+    train_image, val_img, train_label, val_label = train_test_split(train_img_temp, train_label_temp, test_size=test_set_split , random_state=seed, shuffle=True)   # split to generate validation set from train set
     
     # information print
     print("-------------------- SETS --------------------")
@@ -1031,134 +1076,185 @@ def check_fit_param(number_epoch,num_batch_size,num_early_patience):
     # if user don't insert a value for the early patience the program will use a default value
 
     return True                                         # all parameter are ok
+    
+# method to check if the number of test passed as parameter is correct or not
+def validate_num_test(value):
+    try:
+        num = int(value)                # try to convert in int
+        if num > 0:
+            return num                  # correct number
+        else:
+            return 1                    # incorrect number -> return 1
+    except (ValueError, TypeError):
+        return 1                        # incorrect number or error -> return 1
 
 # method to create and fit model, 'chosen_model' indicate the model chosen by user by the menu tillbar
 # 'number_epoch' is number of epoch insert by user , 'num_batch_size' is the batch size insert by user 
 # 'early_patience' is the patience for early stopping insert b user
-def make_fit_model(chosen_model,number_epoch,num_batch_size,num_early_patience):
+def make_fit_model(chosen_model,number_epoch,num_batch_size,num_early_patience,num_test):
     global model_trained, test_image, test_label, train_image, train_label, network, epochs, batch_size, early_patience, past_param_model  # global variables references
     make_model = True                                   # var that indicate if this call of method has to make and fit CNN model
+    n_test = 1                                          # the number of fit to do
+    # Dictionaries for collecting metrics
+    history_train = {'accuracy': [], 'loss': []}        # to contain value for the training set
+    history_val   = {'accuracy': [], 'loss': []}        # to contain value for the validation set
+    history_test  = {'accuracy': [], 'loss': []}        # to contain value for the test set
 
     error_text.set('')                                  # cleans error text
     if len(total_image_ds) == 0:                        # control check
         error_text.set(er_train_without_ds_text)        # update error text
         return
     
-    if len(test_image) == 0 or len(train_image) == 0:   # check whether the training and test set have already been made
-        make_set_ds()                                   # split and create the sets
-    
     if not check_fit_param(number_epoch,num_batch_size,num_early_patience): # check parameters
         return                                          # at least one parameter isn't correct
 
-    status_model_text.set('Model: working')             # notify the start of the process
-    # ---- make the model -----
-    print("------------------------ make model ------------------------")
-    if not model_trained:                   # check if there is a ready model or not 
-        if chosen_model == "None":                          # check if the CNN model has been selected by user
-            error_text.set(er_no_model_specified_text)      # update error text
-            return                                          # user must specify a template
-        else:
-            print("First time, making model...")
-            # save the param for next call of this method
+    n_test = validate_num_test(num_test)                # check the number of test to do
+    print("------------------------ MAKE AND FIT MODEL ------------------------")
+    start_all_time = time.time()                        # start time for all training
+    for i in range(n_test):
+        print("-------- start: test num ",i," --------")
+        
+        make_set_ds()                                   # split and create the sets
+        status_model_text.set('Model: working')         # notify the start of the process
+        # ---- make the model -----
+        print("------------------------ make model ------------------------")
+        if not model_trained:                   # check if there is a ready model or not 
+            if chosen_model == "None":                          # check if the CNN model has been selected by user
+                error_text.set(er_no_model_specified_text)      # update error text
+                return                                          # user must specify a template
+            else:
+                print("First time, making model...")
+                # save the param for next call of this method
+                past_param_model["type_model"] = chosen_model         # save type of the model
+                past_param_model["epochs"] = epochs                   # save type of the model
+                past_param_model["batch_size"] = batch_size           # save type of the model
+                past_param_model["early_patience"] = early_patience   # save type of the model
+
+                make_model = True                               # has to make model, set variable
+        else:                                   # there is a past model, verify if the parameters are the same of this call
+            print("model already done, checking...")
+            make_model = not check_past_model(chosen_model)           # set variable
+
+        print("Check past: ", check_past_model(chosen_model), " Make model: ",make_model)
+        if make_model:                          # make and fit another model
+            # the actual parameters are different respect to the previous ones. Save the param for next call of this method
             past_param_model["type_model"] = chosen_model         # save type of the model
             past_param_model["epochs"] = epochs                   # save type of the model
             past_param_model["batch_size"] = batch_size           # save type of the model
             past_param_model["early_patience"] = early_patience   # save type of the model
+            # check what type of model the user want to make and fit, user can chose form this option: 'None','AlexNet','GoogleNet','Ifrit'
+            if chosen_model == "None":
+                error_text.set(er_no_model_specified_text)      # update error text
+                return                                          # user must specify a template
+            elif chosen_model == "AlexNet":
+                ANet_Model = ANet.AlexNet(len(classes),img_width,img_height,img_channel)    # create an instance of the AlexNet class
+                ANet_Model.make_model()                         # make model (AlexNet architecture)
+                ANet_Model.compile_model()                      # compile 
+                network = ANet_Model.return_model()             # return model
+            elif chosen_model == "GoogleNet":
+                GLNet_Model = GLNet.GoogLeNet(len(classes),img_width,img_height,img_channel)     # create an instance of the AlexNet class
+                GLNet_Model.make_model()                        # make model (GoogLeNet architecture)
+                GLNet_Model.compile_model()                     # compile model
+                network = GLNet_Model.return_model()            # return model
+                return
+            elif chosen_model == "Ifrit_1":                    
+                Ifrit_Model = IfritNet.IfritNet(len(classes),img_width,img_height,img_channel)    # create an instance of the IfriNet class
+                Ifrit_Model.make_model(1)                       # make model (IfriNet 1 architecture)
+                Ifrit_Model.compile_model()                     # compile model
+                network = Ifrit_Model.return_model()            # return model
+            elif chosen_model == "Ifrit_2":                       
+                Ifrit_Model = IfritNet.IfritNet(len(classes),img_width,img_height,img_channel)    # create an instance of the IfriNet class
+                Ifrit_Model.make_model(2)                       # make model (IfriNet 1 architecture)
+                Ifrit_Model.compile_model()                     # compile model
+                network = Ifrit_Model.return_model()            # return model
+            elif chosen_model == "Ifrit_3":                       
+                Ifrit_Model = IfritNet.IfritNet(len(classes),img_width,img_height,img_channel)    # create an instance of the IfriNet class
+                Ifrit_Model.make_model(3)                       # make model (IfriNet 1 architecture)
+                Ifrit_Model.compile_model()                     # compile model
+                network = Ifrit_Model.return_model()            # return model
+            elif chosen_model == "Ifrit_4":                       
+                Ifrit_Model = IfritNet.IfritNet(len(classes),img_width,img_height,img_channel)    # create an instance of the IfriNet class
+                Ifrit_Model.make_model(4)                       # make model (IfriNet 1 architecture)
+                Ifrit_Model.compile_model()                     # compile model
+                network = Ifrit_Model.return_model()            # return model
+        
+        # create TRAIN SET using generator function and specifying shapes and dtypes
+        train_set = tf.data.Dataset.from_generator(generator_train, 
+                                                 output_signature=(tf.TensorSpec(shape=(batch_size ,img_width , img_height , img_channel), dtype=tf.float32),
+                                                                   tf.TensorSpec(shape=(batch_size, len(classes)), dtype=tf.float32))).repeat()
+        
+        # create VALIDATION SET using generator function and specifying shapes and dtypes
+        val_set = tf.data.Dataset.from_generator(generator_val, 
+                                                 output_signature=(tf.TensorSpec(shape=(batch_size ,img_width , img_height , img_channel), dtype=tf.float32),
+                                                                   tf.TensorSpec(shape=(batch_size, len(classes)), dtype=tf.float32))).repeat()
+        # create TEST SET using generator function and specifying shapes and dtypes
+        test_set = tf.data.Dataset.from_generator(generator_test, 
+                                                 output_signature=(tf.TensorSpec(shape=(batch_size ,img_width , img_height , img_channel), dtype=tf.float32),
+                                                                   tf.TensorSpec(shape=(batch_size, len(classes)), dtype=tf.float32))).repeat()
 
-            make_model = True                               # has to make model, set variable
-    else:                                   # there is a past model, verify if the parameters are the same of this call
-        print("model already done, checking...")
-        make_model = not check_past_model(chosen_model)           # set variable
+        # ---- fit the model -----
+        print("------------------------ fit model ------------------------")
+        gpu_memory_usage()                                  # check print
+        
+        checkpoint = ModelCheckpoint(filepath = path_check_point_model+'/weight_seg_'+chosen_model+".keras", verbose = 1, save_best_only = True, monitor='val_loss', mode='min') # val_loss, min, val_categorical_accuracy, max
+        eStop = EarlyStopping(patience = early_patience, verbose = 1, restore_best_weights = True, monitor='val_loss')
+        
+        # -- calculate steps for the sets --
+        # train steps
+        if (len(train_image) % batch_size) == 0 or truncate_set:        # check if the division by batch_size produce rest
+            train_step = int(math.floor(len(train_image) / batch_size))
+        else:
+            train_step = int(math.floor((len(train_image) / batch_size)) + 1)
+        
+        # val steps
+        if (len(val_img) % batch_size) == 0 or truncate_set:            # check if the division by batch_size produce rest
+            val_step = int(math.floor(len(val_img) / batch_size))
+        else:
+            val_step = int(math.floor((len(val_img) / batch_size)) + 1)
+            
+        # test steps
+        if (len(test_image) % batch_size) == 0 or truncate_set:         # check if the division by batch_size produce rest
+            test_step = int(math.floor(len(test_image) / batch_size))
+        else:
+            test_step = int(math.floor((len(test_image) / batch_size)) + 1)
 
-    print("Check past: ", check_past_model(chosen_model), " Make model: ",make_model)
-    if make_model:                          # make and fit another model
-        # the actual parameters are different respect to the previous ones. Save the param for next call of this method
-        past_param_model["type_model"] = chosen_model         # save type of the model
-        past_param_model["epochs"] = epochs                   # save type of the model
-        past_param_model["batch_size"] = batch_size           # save type of the model
-        past_param_model["early_patience"] = early_patience   # save type of the model
-        # check what type of model the user want to make and fit, user can chose form this option: 'None','AlexNet','GoogleNet','Ifrit'
-        if chosen_model == "None":
-            error_text.set(er_no_model_specified_text)      # update error text
-            return                                          # user must specify a template
-        elif chosen_model == "AlexNet":
-            ANet_Model = ANet.AlexNet(len(classes),img_width,img_height,img_channel)    # create an instance of the AlexNet class
-            ANet_Model.make_model()                         # make model (AlexNet architecture)
-            ANet_Model.compile_model()                      # compile 
-            network = ANet_Model.return_model()             # return model
-        elif chosen_model == "GoogleNet":
-            GLNet_Model = GLNet.GoogLeNet(len(classes),img_width,img_height,img_channel)     # create an instance of the AlexNet class
-            GLNet_Model.make_model()                        # make model (GoogLeNet architecture)
-            GLNet_Model.compile_model()                     # compile model
-            network = GLNet_Model.return_model()            # return model
-            return
-        elif chosen_model == "Ifrit_1":                    
-            Ifrit_Model = IfritNet.IfritNet(len(classes),img_width,img_height,img_channel)    # create an instance of the IfriNet class
-            Ifrit_Model.make_model(1)                       # make model (IfriNet 1 architecture)
-            Ifrit_Model.compile_model()                     # compile model
-            network = Ifrit_Model.return_model()            # return model
-        elif chosen_model == "Ifrit_2":                       
-            Ifrit_Model = IfritNet.IfritNet(len(classes),img_width,img_height,img_channel)    # create an instance of the IfriNet class
-            Ifrit_Model.make_model(2)                       # make model (IfriNet 1 architecture)
-            Ifrit_Model.compile_model()                     # compile model
-            network = Ifrit_Model.return_model()            # return model
-        elif chosen_model == "Ifrit_3":                       
-            Ifrit_Model = IfritNet.IfritNet(len(classes),img_width,img_height,img_channel)    # create an instance of the IfriNet class
-            Ifrit_Model.make_model(3)                       # make model (IfriNet 1 architecture)
-            Ifrit_Model.compile_model()                     # compile model
-            network = Ifrit_Model.return_model()            # return model
-        elif chosen_model == "Ifrit_4":                       
-            Ifrit_Model = IfritNet.IfritNet(len(classes),img_width,img_height,img_channel)    # create an instance of the IfriNet class
-            Ifrit_Model.make_model(4)                       # make model (IfriNet 1 architecture)
-            Ifrit_Model.compile_model()                     # compile model
-            network = Ifrit_Model.return_model()            # return model
+        start_time = time.time()                            # start time for training
+        history = network.fit(train_set,validation_data=val_set,steps_per_epoch=train_step,validation_steps=val_step, epochs=epochs, callbacks = [checkpoint, eStop])     # fit model
+        end_time = time.time()                              # end time for training
+        print(f"Time for training the model: ", converti_secondi(end_time - start_time)," - of the test number: ",i)  # print time to train the model
+        
+        model_trained = True                                # update status variable
+        status_model_text.set('Model: trained')             # notify the end of the process
+        
+        if n_test == 1:             # case only 1 fit
+            plot_fit_result(history.history,0)                  # visualize the value for the fit - history.history is a dictionary - call method for plot train result
+        else:                       # case more fit, statistical pourpose
+            history_train['accuracy'].append(history.history['accuracy'][-1])
+            history_train['loss'].append(history.history['loss'][-1])
+            history_val['accuracy'].append(history.history['val_accuracy'][-1])
+            history_val['loss'].append(history.history['val_loss'][-1])
+            
+        
+        # -- evaluate on test set and make plots --
+        test_loss, test_acc = network.evaluate(test_set, steps=test_step)       # obtain loss and accuracy metrics
+        if n_test == 1:             # case only 1 fit
+            dict_metrics = {'loss': test_loss, 'accuracy': test_acc}            # create a dictionary contain the metrics
+            plot_fit_result(dict_metrics,1)                                     # plot the values obtained
+            compute_confusion_matrix(network, test_set, test_step, classes)     # call method to obtain the confusion matrix    
+        else:                       # case more fit, statistical pourpose
+            history_test['loss'].append(test_loss)
+            history_test['accuracy'].append(test_acc)
+        
+        print("-------- end: test num ",i," --------")
+    end_all_time = time.time()                              # end time for all training
     
-    # create TRAIN SET using generator function and specifying shapes and dtypes
-    train_set = tf.data.Dataset.from_generator(generator_train, 
-                                             output_signature=(tf.TensorSpec(shape=(batch_size ,img_width , img_height , img_channel), dtype=tf.float32),
-                                                               tf.TensorSpec(shape=(batch_size, len(classes)), dtype=tf.float32))).repeat()
+    # plot and calculate the mean in case of number of fit test done
+    if n_test > 1:
+        plot_accuracy_and_loss(history_train, history_val, history_test)
+        print_average_metrics(history_train, history_val, history_test)
     
-    # create VALIDATION SET using generator function and specifying shapes and dtypes
-    val_set = tf.data.Dataset.from_generator(generator_val, 
-                                             output_signature=(tf.TensorSpec(shape=(batch_size ,img_width , img_height , img_channel), dtype=tf.float32),
-                                                               tf.TensorSpec(shape=(batch_size, len(classes)), dtype=tf.float32))).repeat()
-    # create TEST SET using generator function and specifying shapes and dtypes
-    test_set = tf.data.Dataset.from_generator(generator_test, 
-                                             output_signature=(tf.TensorSpec(shape=(batch_size ,img_width , img_height , img_channel), dtype=tf.float32),
-                                                               tf.TensorSpec(shape=(batch_size, len(classes)), dtype=tf.float32))).repeat()
-
-    # ---- fit the model -----
-    print("------------------------ fit model ------------------------")
-    checkpoint = ModelCheckpoint(filepath = path_check_point_model+'/weight_seg_'+chosen_model+".keras", verbose = 1, save_best_only = True, monitor='val_loss', mode='min') # val_loss, min, val_categorical_accuracy, max
-    
-    eStop = EarlyStopping(patience = early_patience, verbose = 1, restore_best_weights = True, monitor='val_loss')
-    
-    # train steps
-    if (len(train_image) % batch_size) == 0 or truncate_set:        # check if the division by batch_size produce rest
-        train_step = int(math.floor(len(train_image) / batch_size))
-    else:
-        train_step = int(math.floor((len(train_image) / batch_size)) + 1)
-    
-    # val steps
-    if (len(val_img) % batch_size) == 0 or truncate_set:            # check if the division by batch_size produce rest
-        val_step = int(math.floor(len(val_img) / batch_size))
-    else:
-        val_step = int(math.floor((len(val_img) / batch_size)) + 1)
-
-    gpu_memory_usage()                                  # check print
-
-    start_time = time.time()                            # start time for training
-    history = network.fit(train_set,validation_data=val_set,steps_per_epoch=train_step,validation_steps=val_step, epochs=epochs, callbacks = [checkpoint, eStop])     # fit model
-    end_time = time.time()                              # end time for training
-    print(f"Time for training the model: ", converti_secondi(end_time - start_time))  # print time to train the model
-    
-    model_trained = True                                # update status variable
-    status_model_text.set('Model: trained')             # notify the end of the process
-    
-    plot_fit_result(history.history,0)                  # visualize the value for the fit - history.history is a dictionary - call method for plot train result
-    gpu_memory_usage()
-    model_evaluate("test")                              # evaluate the model 
-    confusion_matrix()                                  # call method to obtain the confusion matrix
+    print(f"Time for training all the tests: ", converti_secondi(end_all_time - start_all_time))
+    print("------------------------------------------------")
     
 # method for evaluate the model by the test set. 'param' specify if the evaluate hase to use test set or external test set ('',)
 def model_evaluate(param):
@@ -1336,6 +1432,44 @@ def check_past_model(type_model):
                     return True                                            # they are the same
     return False                                    # they aren't the same
 
+def plot_accuracy_and_loss(train_hist, val_hist, test_hist):
+    runs = range(1, len(train_hist['accuracy']) + 1)
+    
+    # -- plot accuracy --
+    plt.figure(figsize=(10, 6))
+    plt.plot(runs, train_hist['accuracy'], label='Train Accuracy')
+    plt.plot(runs, val_hist['accuracy'], label='Validation Accuracy')
+    plt.plot(runs, test_hist['accuracy'], label='Test Accuracy')
+    
+    plt.xlabel('Run')
+    plt.ylabel('Accuracy')
+    plt.title('Accuracy per run')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+    
+    # -- plot loss --
+    plt.figure(figsize=(10, 6))
+    plt.plot(runs, train_hist['loss'], label='Train Loss')
+    plt.plot(runs, val_hist['loss'], label='Validation Loss')
+    plt.plot(runs, test_hist['loss'], label='Test Loss')
+    
+    plt.xlabel('Run')
+    plt.ylabel('Loss')
+    plt.title('Loss per run')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def print_average_metrics(train_hist, val_hist, test_hist):
+    def avg(lst): return round(np.mean(lst), 4)
+    
+    print("\nMean:")
+    print(f"Train     → Accuracy: {avg(train_hist['accuracy'])}, Loss: {avg(train_hist['loss'])}")
+    print(f"Validation→ Accuracy: {avg(val_hist['accuracy'])}, Loss: {avg(val_hist['loss'])}")
+    print(f"Test      → Accuracy: {avg(test_hist['accuracy'])}, Loss: {avg(test_hist['loss'])}")
+
+
 # method to plot accuracy and loss. arc is a dictionary with the results, 'mode' if is '0': there are fit results, if is '1': there are evaluation results
 def plot_fit_result(arc,mode):
     result_dict = {}                    # dict that will contain the results to plot with the correct label/title
@@ -1428,6 +1562,50 @@ def confusion_matrix():
     plt.title('Confusion Matrix', fontsize=18)
     plt.show()                                              # shows confusion matrix
     
+# to calculate confusion matrix using dataset.from.generator 
+def compute_confusion_matrix(model, dataset, steps, classes):
+    # Previsione batch-wise usando il dataset
+    predictions = model.predict(dataset, steps=steps)
+
+    # Estrazione dei dati reali (labels) dal dataset (solo per i batch usati)
+    true_labels = []
+    for batch_idx, (_, y) in enumerate(dataset):
+        true_labels.append(y.numpy())
+        if batch_idx + 1 >= steps:
+            break
+    true_labels = np.concatenate(true_labels, axis=0)
+
+    # Calcolo confusion matrix
+    conf_matrix = np.zeros((len(classes), len(classes)), dtype=int)
+    for i in range(len(predictions)):
+        true_idx = np.argmax(true_labels[i])
+        pred_idx = np.argmax(predictions[i])
+        conf_matrix[true_idx][pred_idx] += 1
+
+    # Calcolo percentuali
+    conf_matrix_perc = [[
+        f" ({(conf_matrix[i][j] / np.sum(conf_matrix)) * 100:.2f}%)"
+        for j in range(conf_matrix.shape[1])
+    ] for i in range(conf_matrix.shape[0])]
+
+    # Visualizzazione confusion matrix
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.matshow(conf_matrix, cmap=plt.cm.Blues, alpha=0.3)
+    ax.set_xticks(np.arange(len(classes)))
+    ax.set_yticks(np.arange(len(classes)))
+    ax.set_xticklabels(classes)
+    ax.set_yticklabels(classes)
+
+    for i in range(len(classes)):
+        for j in range(len(classes)):
+            ax.text(j, i, f"{conf_matrix[i][j]}{conf_matrix_perc[i][j]}",
+                    va='center', ha='center', fontsize=12)
+
+    plt.xlabel("Predicted", fontsize=14)
+    plt.ylabel("Actual", fontsize=14)
+    plt.title("Confusion Matrix", fontsize=16)
+    plt.show()
+    
 # method to check GPU device avaible and setting
 def GPU_check():
     print("-------------------- TENSORFLOW VERSION --------------------")
@@ -1465,9 +1643,10 @@ def gpu_memory_usage():
 
 # funzione di utilità per visualizzare un tempo dato in secondi in minuti, secondi
 def converti_secondi(sec):
-    minuti = sec // 60
+    ore = sec // 3600
+    minuti = (sec // 60) % 60
     secondi = sec % 60
-    return f"{minuti}m {secondi:.2f}s"
+    return f"{ore:.0f}h {minuti:.0f}m {secondi:.2f}s"
 # ------------------------------------ end: utility method ------------------------------------
 
 # ------------------------------------ main ------------------------------------        
