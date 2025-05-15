@@ -456,6 +456,7 @@ def btn_load_ds_method(im_width,im_height,im_channel):
 def import_image_from_ds(path_ds,im_width,im_height,im_channel):
     global total_image_ds, total_labels_ds,ds_downloading,classes,toggle_duplicate_ds,res_copy_ds_name,img_channel   # refer to global variables
     list_dir_ds = os.listdir(path_ds)               # list of the folders that are in the DS, one folder for each class
+    make_ds_copy = toggle_duplicate_ds.get()        # take the value of the toggled for DS copy
     
     # check if the total ds is already loaded
     if len(total_image_ds) != 0:                    # cleans the arrays to allow the dataset to be reloaded
@@ -470,8 +471,9 @@ def import_image_from_ds(path_ds,im_width,im_height,im_channel):
     if toggle_grey_scale.get():
         img_channel = 1                 # the number of channel must be 1
         toggle_duplicate_ds.set(True)   # set the var to create the copy of DS
+        make_ds_copy = True
 
-    if toggle_duplicate_ds.get():
+    if make_ds_copy:
         print("Have to duplicate the DS resized.")  
         # check the folder to contain the resized copy of DS
         parent_path = os.path.dirname(path_ds)                  # calculate the parent path
@@ -496,15 +498,15 @@ def import_image_from_ds(path_ds,im_width,im_height,im_channel):
         classes.append(str(folder))                 # update classes
         index = classes.index(str(folder))          # take index of classes, is teh label of this class
         p = os.path.join(path_ds,folder)            # path of each folder (of the original folder)
-        p_copy = os.path.join(path_copy, folder)    # path of each folder (for the DS copy folder)
-        if toggle_duplicate_ds.get():               # resized copy case
+        if make_ds_copy:                    # resized copy case
+            p_copy = os.path.join(path_copy, folder)    # path of each folder (for the DS copy folder)
             os.makedirs(p_copy, exist_ok=True)          # crea sottocartella nella copia
         # creating a collection with the available images
         for filename in os.listdir(p):                      # for each images on the current folder
             img = cv2.imread(os.path.join(p,filename))      # take current iamge
             if img is not None:                             # check image taken
                 # check if is the normal case of the case of the creation of the resized copy DS
-                if toggle_duplicate_ds.get():   # resized copy case
+                if make_ds_copy:            # resized copy case
                     # check if there is a need to convert in greyscale
                     if toggle_grey_scale.get():
                         img = cv2.imread(percorso_img, cv2.IMREAD_GRAYSCALE)    # convert in greyscale
@@ -535,6 +537,8 @@ def import_image_from_ds(path_ds,im_width,im_height,im_channel):
     print("total_image_ds",len(total_image_ds), total_image_ds.shape)
     print("total_labels_ds",len(total_labels_ds), total_labels_ds.shape)
     print("Requied memory for images ds: ",total_image_ds.size * total_image_ds.itemsize / 10**6," MB")
+    if make_ds_copy and os.path.exists(path_copy):
+        print("The copy of DS has been successfully created.")
     print("------------------------------------------------------------")
     
     status_DS_text.set('Image DataSet: downloaded')             # notify the end of the process
@@ -819,7 +823,7 @@ def make_set_ds():
 # explanation: for large dataset with large image or big batch size the memory memory may not be sufficient. 
 #              To avoid memory overflow, the sets are supplied in batches via yeld istruction.
 # define generator function to do the training set
-def generator_train():
+def generator_train(use_greyscale):
     # create the tensor that will contain the data
     img_tensor = []                                             # tensor that contain the images of one batch from the set
     label_tensor = []                                           # tensor that contain the labels of one batch from the set
@@ -836,10 +840,11 @@ def generator_train():
         img_path = train_image[idx]                              
         label = train_label[idx]
         # check if the DS is in greyscale
-        if toggle_grey_scale.get():
+        if use_greyscale:
             img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)    # take current image (greyscale)
         else:
             img = cv2.imread(img_path)                          # take current iamge (RGB)
+        img = cv2.imread(img_path)                          # take current iamge (RGB)
         if img is not None:                             # check image taken
             #check if the image is in the correct shape for the CNN (shape specified in the global variables)
             if img.shape != (img_width, img_height, img_channel):       
@@ -876,9 +881,12 @@ def generator_train():
 
                 yield img_tensor, label_tensor                  # return the last batch
                 
+    print("End train set generation in epoch.")
+    gpu_memory_usage()                                  # check print
+
 
 # define generator function to do the validation set
-def generator_val():
+def generator_val(use_greyscale):
     # create the tensor that will contain the data
     img_tensor = []                                             # tensor that contain the images of one batch from the set
     label_tensor = []                                           # tensor that contain the labels of one batch from the set
@@ -895,7 +903,7 @@ def generator_val():
         img_path = val_img[idx]
         label = val_label[idx]
         # check if the DS is in greyscale
-        if toggle_grey_scale.get():
+        if use_greyscale:
             img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)    # take current image (greyscale)
         else:
             img = cv2.imread(img_path)                          # take current iamge (RGB)
@@ -935,7 +943,7 @@ def generator_val():
                 yield img_tensor, label_tensor                  # return the last batch
         
 # define generator function to do the test set
-def generator_test():
+def generator_test(use_greyscale):
     # create the tensor that will contain the data
     img_tensor = []                                             # tensor that contain the images of one batch from the set
     label_tensor = []                                           # tensor that contain the labels of one batch from the set
@@ -952,7 +960,7 @@ def generator_test():
         img_path = test_image[idx]
         label = test_label[idx]
         # check if the DS is in greyscale
-        if toggle_grey_scale.get():
+        if use_greyscale:
             img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)    # take current image (greyscale)
         else:
             img = cv2.imread(img_path)                          # take current iamge (RGB)
@@ -1203,17 +1211,19 @@ def make_fit_model(chosen_model,number_epoch,num_batch_size,num_early_patience,n
                 Ifrit_Model.compile_model()                     # compile model
                 network = Ifrit_Model.return_model()            # return model
         
+        use_greyscale = toggle_grey_scale.get()                 # see if is the case of DS with images in greyscale
+        
         # create TRAIN SET using generator function and specifying shapes and dtypes
-        train_set = tf.data.Dataset.from_generator(generator_train, 
+        train_set = tf.data.Dataset.from_generator(lambda: generator_train(use_greyscale), 
                                                  output_signature=(tf.TensorSpec(shape=(batch_size ,img_width , img_height , img_channel), dtype=tf.float32),
                                                                    tf.TensorSpec(shape=(batch_size, len(classes)), dtype=tf.float32))).repeat()
         
         # create VALIDATION SET using generator function and specifying shapes and dtypes
-        val_set = tf.data.Dataset.from_generator(generator_val, 
+        val_set = tf.data.Dataset.from_generator(lambda: generator_val(use_greyscale), 
                                                  output_signature=(tf.TensorSpec(shape=(batch_size ,img_width , img_height , img_channel), dtype=tf.float32),
                                                                    tf.TensorSpec(shape=(batch_size, len(classes)), dtype=tf.float32))).repeat()
         # create TEST SET using generator function and specifying shapes and dtypes
-        test_set = tf.data.Dataset.from_generator(generator_test, 
+        test_set = tf.data.Dataset.from_generator(lambda: generator_test(use_greyscale), 
                                                  output_signature=(tf.TensorSpec(shape=(batch_size ,img_width , img_height , img_channel), dtype=tf.float32),
                                                                    tf.TensorSpec(shape=(batch_size, len(classes)), dtype=tf.float32))).repeat()
 
@@ -1671,7 +1681,7 @@ def converti_secondi(sec):
     ore = sec // 3600
     minuti = (sec // 60) % 60
     secondi = sec % 60
-    return f"{ore:.0f}h {minuti:.0f}m {secondi:.2f}s"
+    return f"{ore:.0f}h {minuti:.0f}m {secondi:.0f}s"
 # ------------------------------------ end: utility method ------------------------------------
 
 # ------------------------------------ main ------------------------------------        
