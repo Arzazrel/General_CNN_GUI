@@ -158,6 +158,8 @@ test_label_ext = []                 # contain the labels of the images choosen a
 test_set_split = 0.2                # test set size as a percentage of the total dataset
 val_set_split = 0.1                 # validation set size as a percentage of the training set
 
+threshold_VRAM = 500                # VRAM utilisation threshold above which it will be displayed during training (in MB)
+
 # -------------------------- start: dataset_information_variable --------------------------
 # ---- status variable for dataset information ----
 del_corrupt_img = False                         # variable that indicate to the program whether it should delete any corrupted images in the dataset
@@ -234,7 +236,7 @@ def current_view_to_visualise():
     toggle_gs = Checkbutton(top_frame, text="Greyscale DS copy", variable=toggle_grey_scale)    # checkbox for the copy of dataset
     toggle_gs.grid(row=0, column=10, sticky="W", padx=5, pady=10)
     
-    btn_load_ds = Button(top_frame, text="Load image DS", command=lambda: btn_load_ds_method(image_width_input.get(),image_height_input.get(),image_channel_input.get()))   # button to load the whole dataset
+    btn_load_ds = Button(top_frame, text="Load image DS", command=lambda: btn_load_ds_method(path_ds_input.get(), image_width_input.get(),image_height_input.get(),image_channel_input.get()))   # button to load the whole dataset
     btn_load_ds.grid(row=0, column=11, sticky="W", padx=5, pady=10)
      
     # -- end: row 0 --
@@ -442,20 +444,28 @@ def btn_load_ext_image():
 
 # ------------------------------------ start: methods for DS ------------------------------------
 # activate a thread to load the ds, in this way the GUI will not be blocked
-def btn_load_ds_method(im_width,im_height,im_channel):
+def btn_load_ds_method(folder_name,im_width,im_height,im_channel):
     global ds_downloading,ds_analysing          # refer to global variables
     error_text.set('')                          # cleans error text
     if not (ds_downloading or ds_analysing):    # check if program is already downloading the dataset
         ds_downloading = True                   # set control variable
-        t = Thread(target=import_image_from_ds, args=(path_dir_ds,im_width,im_height,im_channel,))
+        t = Thread(target=import_image_from_ds, args=(folder_name,im_width,im_height,im_channel,))
         t.start()                               # starts thread for import dataset
     else:
         error_text.set(er_down_ds_text)         # update error text 
         
 # method for import the whole dataset, path_ds is the path of the dataset to load. -- P.S. for more detail please read note 0 (at the end of the file)  
-def import_image_from_ds(path_ds,im_width,im_height,im_channel):
+def import_image_from_ds(folder_name,im_width,im_height,im_channel):
     global total_image_ds, total_labels_ds,ds_downloading,classes,toggle_duplicate_ds,res_copy_ds_name,img_channel   # refer to global variables
-    list_dir_ds = os.listdir(path_ds)               # list of the folders that are in the DS, one folder for each class
+    
+    # take the list of the folders that are in the DS, one folder for each class
+    if is_valid_folder_name(folder_name) and os.path.isdir(os.path.join("Dataset",folder_name)):    # check if the user write a valide name for the DS and there is a folder
+        path_ds = os.path.join("Dataset",folder_name)
+        list_dir_ds = os.listdir(path_ds)               # list of the folders that are in the DS, one folder for each class
+    else:                                           # take default ds path
+        path_ds = path_dir_ds
+        list_dir_ds = os.listdir(path_ds)               # list of the folders that are in the DS, one folder for each class
+                
     make_ds_copy = toggle_duplicate_ds.get()        # take the value of the toggled for DS copy
     
     # check if the total ds is already loaded
@@ -503,14 +513,15 @@ def import_image_from_ds(path_ds,im_width,im_height,im_channel):
             os.makedirs(p_copy, exist_ok=True)          # crea sottocartella nella copia
         # creating a collection with the available images
         for filename in os.listdir(p):                      # for each images on the current folder
-            img = cv2.imread(os.path.join(p,filename))      # take current iamge
+            # check if there is a need to convert in greyscale
+            if toggle_grey_scale.get():     # Greyscale case
+                img = cv2.imread(os.path.join(p,filename), cv2.IMREAD_GRAYSCALE)    # convert in greyscale
+            else:                           # RGB case
+                img = cv2.imread(os.path.join(p,filename))              # take current iamge
+            
             if img is not None:                             # check image taken
                 # check if is the normal case of the case of the creation of the resized copy DS
                 if make_ds_copy:            # resized copy case
-                    # check if there is a need to convert in greyscale
-                    if toggle_grey_scale.get():
-                        img = cv2.imread(percorso_img, cv2.IMREAD_GRAYSCALE)    # convert in greyscale
-                    
                     # check if there is a need to resize
                     if img.shape != (img_height, img_width, img_channel):       
                         dim = (img_height, img_width)
@@ -533,6 +544,7 @@ def import_image_from_ds(path_ds,im_width,im_height,im_channel):
     total_image_ds = np.array(total_image_ds)
     total_labels_ds = np.array(total_labels_ds)
     # control data print
+    print("Read the DS: ",path_ds," with size (",img_height,",",img_width,",",img_channel,")")   # status print
     print("Num of classes: ",len(classes))
     print("total_image_ds",len(total_image_ds), total_image_ds.shape)
     print("total_labels_ds",len(total_labels_ds), total_labels_ds.shape)
@@ -633,7 +645,7 @@ def show_plot_analysing():
        
 # method for import the whole test dataset, new_path_ds is the path of the dataset to load. -- P.S. same detail of the 'import_image_from_ds' method in Note 0
 def analyse_ds(folder_name,im_width,im_height,im_channel):
-    global ds_analysing, RGB_mean_dict
+    global ds_analysing, RGB_mean_dict, path_dir_ds
     # variables
     img_number = 0                                  # total number of images in the dataset
     classes = {}                                    # dictionary containing all the classes in the dataset and the number of images of each class
@@ -642,22 +654,21 @@ def analyse_ds(folder_name,im_width,im_height,im_channel):
     top_shape_images = 10                           # the top frequent shapes for the images in the dataset
     corrupt_images = []                             # array that will contain the name of the corrupted images that are in the dataset
     
-    new_path_ds = path_dir_ds   
-    
     # take the list of the folders that are in the DS, one folder for each class
-    if is_valid_folder_name(folder_name) and os.path.isdir(folder): # check if the user write a valide name for the DS and there is a folder
+    if is_valid_folder_name(folder_name) and os.path.isdir(os.path.join("Dataset",folder_name)):    # check if the user write a valide name for the DS and there is a folder
         new_path_ds = os.path.join("Dataset",folder_name)
         list_dir_ds = os.listdir(new_path_ds) 
+        path_dir_ds = new_path_ds                                   # update the name of the dataset
     else:                                           # take default ds path
         new_path_ds = path_dir_ds
         list_dir_ds = os.listdir(path_dir_ds)    
 
-    if not check_image_size_param(im_width,im_height,im_channel): # check parameters of image size
+    if not check_image_size_param(im_width,im_height,im_channel):   # check parameters of image size
         return  
     
     status_DS_text.set('Image DataSet: analysing')  # notify the start of the analysing
     print("-------------------- ANALYSING DS --------------------")
-    print(" -- Start time analyse the DS: ", path_dir_ds, " --")
+    print(" -- Start time analyse the DS: ", new_path_ds, " --")
     print("Image size for resize is: (",img_width,",",img_height,",",img_channel,")")
     im_ds = []                  # tensor that contain the images of one batch from the set
     lab_ds = []                 # tensor that contain the labels of one batch from the set
@@ -706,13 +717,13 @@ def analyse_ds(folder_name,im_width,im_height,im_channel):
     total_time = end_time - start_time
     print(f"Time to read and resize the images of DS: ", converti_secondi(total_time))  # print time
     percent = (resize_time / total_time) * 100
-    print(f"Time to resize the images of DS: ", converti_secondi(resize_time),f" {percent:.2f}% of total time.")                        # print time
+    print(f"Time to resize the images of DS: ", converti_secondi(resize_time),f"| {percent:.2f}% of total time.")                        # print time
     percent = (save_path_time / total_time) * 100
-    print(f"Time to save the path of the images of DS: ", converti_secondi(save_path_time),f" {percent:.2f}% of total time.")           # print time
+    print(f"Time to save the path of the images of DS: ", converti_secondi(save_path_time),f"| {percent:.2f}% of total time.")           # print time
     percent = (tens_time / total_time) * 100
-    print(f"Time to convert and add to the tensor of the images of DS: ", converti_secondi(tens_time),f" {percent:.2f}% of total time.")# print time
+    print(f"Time to convert and add to the tensor of the images of DS: ", converti_secondi(tens_time),f"| {percent:.2f}% of total time.")# print time
     
-    print("\n -- Start analyse the DS: ", path_dir_ds, " --")
+    print("\n -- Start analyse the DS: ", new_path_ds, " --")
     # slide the images and labels form DataSet
     for folder in list_dir_ds:                      # for each folder in DS
         print("Analyse the folder: ",folder)        # status print
@@ -844,17 +855,19 @@ def generator_train(use_greyscale):
             img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)    # take current image (greyscale)
         else:
             img = cv2.imread(img_path)                          # take current iamge (RGB)
-        img = cv2.imread(img_path)                          # take current iamge (RGB)
+
         if img is not None:                             # check image taken
             #check if the image is in the correct shape for the CNN (shape specified in the global variables)
             if img.shape != (img_width, img_height, img_channel):       
                 dim = (img_height ,img_width)
-                img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)        # resize the image
-                img = img.astype('float32') / 255                                # normalization
-                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))   # add new element and convert to TF tensors
+                img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)       # resize the image
+                if use_greyscale:
+                    img = np.expand_dims(img, axis=-1)                          # add channel in the greyscale case
+                img = img.astype('float32') / 255                               # normalization
+                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))  # add new element and convert to TF tensors
             else:
-                img = img.astype('float32') / 255                                       # normalization
-                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))          # add new element and convert to TF tensors
+                img = img.astype('float32') / 255                               # normalization
+                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))  # add new element and convert to TF tensors
         else:
              print("Image loading error in analysing DS...",img_path)
         
@@ -881,8 +894,7 @@ def generator_train(use_greyscale):
 
                 yield img_tensor, label_tensor                  # return the last batch
                 
-    print("End train set generation in epoch.")
-    gpu_memory_usage()                                  # check print
+    gpu_memory_usage_threshold(threshold_VRAM)                             # check print
 
 
 # define generator function to do the validation set
@@ -911,12 +923,14 @@ def generator_val(use_greyscale):
             #check if the image is in the correct shape for the CNN (shape specified in the global variables)
             if img.shape != (img_width, img_height, img_channel):       
                 dim = (img_height ,img_width)
-                img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)        # resize the image
-                img = img.astype('float32') / 255                         # normalization
-                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))   # add new element and convert to TF tensors
+                img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)       # resize the image
+                if use_greyscale:
+                    img = np.expand_dims(img, axis=-1)                          # add channel in the greyscale case
+                img = img.astype('float32') / 255                               # normalization
+                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))  # add new element and convert to TF tensors
             else:
-                img = img.astype('float32') / 255                                       # normalization
-                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))          # add new element and convert to TF tensors
+                img = img.astype('float32') / 255                               # normalization
+                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))  # add new element and convert to TF tensors
         else:
             print("Image loading error in generator_val...",img_path)
         
@@ -968,12 +982,14 @@ def generator_test(use_greyscale):
             #check if the image is in the correct shape for the CNN (shape specified in the global variables)
             if img.shape != (img_width, img_height, img_channel):       
                 dim = (img_height ,img_width)
-                img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)        # resize the image
-                img = img.astype('float32') / 255                         # normalization
-                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))   # add new element and convert to TF tensors
+                img = cv2.resize(img, dim, interpolation= cv2.INTER_AREA)       # resize the image
+                if use_greyscale:
+                    img = np.expand_dims(img, axis=-1)                          # add channel in the greyscale case
+                img = img.astype('float32') / 255                               # normalization
+                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))  # add new element and convert to TF tensors
             else:
-                img = img.astype('float32') / 255                                       # normalization
-                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))          # add new element and convert to TF tensors
+                img = img.astype('float32') / 255                               # normalization
+                img_tensor.append(tf.convert_to_tensor(img, dtype=tf.float32))  # add new element and convert to TF tensors
         else:
             print("Image loading error in generator_test...",img_path)
 
@@ -998,6 +1014,8 @@ def generator_test(use_greyscale):
                     img_tensor.append(img_rest_tensor[i])
                     label_tensor.append(label_rest_tensor[i])
                 yield img_tensor, label_tensor                  # return the last batch
+                
+    gpu_memory_usage_threshold(threshold_VRAM)
 
 # ------------------ end: generetor function ------------------
 # ------------------------------------ end: methods for DS ------------------------------------
@@ -1229,7 +1247,7 @@ def make_fit_model(chosen_model,number_epoch,num_batch_size,num_early_patience,n
 
         # ---- fit the model -----
         print("------------------------ fit model ------------------------")
-        gpu_memory_usage()                                  # check print
+        gpu_memory_usage_threshold(threshold_VRAM)                      # check print
         
         checkpoint = ModelCheckpoint(filepath = path_check_point_model+'/weight_seg_'+chosen_model+".keras", verbose = 1, save_best_only = True, monitor='val_loss', mode='min') # val_loss, min, val_categorical_accuracy, max
         eStop = EarlyStopping(patience = early_patience, verbose = 1, restore_best_weights = True, monitor='val_loss')
@@ -1671,10 +1689,37 @@ def gpu_memory_usage():
             for i, gpu in enumerate(gpus):
                 info = tf.config.experimental.get_memory_info(f"GPU:{i}")
                 used = info['current'] / (1024**2)  # in MB
-                print(f"GPU {i} VRAM used: {used:.2f} MB")
+                if used >= 1024:        # case of GB
+                    used = used / 1024
+                    print(f"GPU {i} VRAM used: {used:.3f} GB")
+                else:                    # case of MB
+                    print(f"GPU {i} VRAM used: {used:.2f} MB")
         except Exception as e:
             print("Errore nel monitorare la GPU:", e)
     print("------------------------------------------------------------")
+    
+# utility function to print the VRAM used at the moment if is upper of a threshold (in MB)
+def gpu_memory_usage_threshold(threshold):
+    if threshold <= 0:      # control check
+        return
+    
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for i, gpu in enumerate(gpus):
+                info = tf.config.experimental.get_memory_info(f"GPU:{i}")
+                used = info['current'] / (1024**2)  # in MB
+                if used >= threshold:               # check if is greater than threshold
+                    print("\n-------------------- VRAM USAGE --------------------")
+                    if used >= 1024:        # case of GB
+                        used = used / 1024
+                        print(f"GPU {i} VRAM used: {used:.3f} GB")
+                    else:                    # case of MB
+                        print(f"GPU {i} VRAM used: {used:.2f} MB")
+                    print("------------------------------------------------------------")
+        except Exception as e:
+            print("Errore nel monitorare la GPU:", e)
+    
 
 # funzione di utilità per visualizzare un tempo dato in secondi in minuti, secondi
 def converti_secondi(sec):

@@ -1,0 +1,24 @@
+wsl:
+- entrare: wsl
+- lista: wsl --list
+- lista in esecuzione: wsl --list --running
+- uscire: wsl --shutdown
+- terminare: wsl --terminate <nome_distribuzione>
+
+per uscire da VM: exit
+
+environment: tf_gpu_env_py310
+- entrare: conda activate tf_gpu_env_py310
+- uscire: conda deactivate
+
+environment: vpns
+- entrare: conda activate vpn
+- uscire: conda deactivate
+
+per spostarsi nella cartella della repository
+cd /mnt/e/GitHub_Repository/General_CNN_GUI/
+cd /mnt/e/GitHub_Repository/MIei_progetti/GAN
+cd /mnt/e/GitHub_Repository/Project_SEAI_25/code
+cd /mnt/e/GitHub_Repository/progetto
+
+tilde in linea di comando: alt + 126
