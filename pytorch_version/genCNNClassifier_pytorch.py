@@ -35,6 +35,7 @@ import copy
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
+import torchvision.transforms.v2 as T
 from sklearn.model_selection import train_test_split
 
 # ---- plot ----
@@ -67,14 +68,35 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 window = Tk()
 toggle_duplicate_ds = BooleanVar(value=False)   # create a resized copy of the dataset
 toggle_grey_scale = BooleanVar(value=False)     # create a greyscale copy of the dataset
+
+# ---- data augmentation toggles ----
+# Data augmentation is applied ON-THE-FLY and ONLY to the training set: at every
+# epoch each training image is randomly transformed when read, while the images
+# on disk are never modified and no new files are created. Validation and test
+# sets are never augmented, so their metrics stay comparable across experiments.
+# 'aug_enable' is the master switch; each transform below has its own toggle and
+# is only used when both the master switch and its own toggle are on.
+aug_enable = BooleanVar(value=False)            # master switch for augmentation
+aug_hflip = BooleanVar(value=False)             # random horizontal flip
+aug_vflip = BooleanVar(value=False)             # random vertical flip
+aug_rotation = BooleanVar(value=False)          # random rotation (+/- 15 deg)
+aug_zoom = BooleanVar(value=False)              # random zoom / scale (random resized crop)
+aug_shift = BooleanVar(value=False)             # random translation (shift)
+aug_brightness = BooleanVar(value=False)        # random brightness change
+aug_contrast = BooleanVar(value=False)          # random contrast change
+
+# ---- results output toggle ----
+# When on, plots and confusion matrices are SAVED as image files into
+# result/<current_dataset_name>/ instead of only being shown on screen.
+save_results = BooleanVar(value=False)          # save results to disk vs show only
 window_width = 1800
-window_height = 750
+window_height = 810                      # a bit taller to fit the augmentation row
 # explain frame
 ex_f_padx = 10;  ex_f_pady = 5
 ex_frame_width = window_width - 2 * ex_f_padx;  ex_frame_height = 45
 # top frame
 t_f_padx = 10;  t_f_pady = 5
-top_frame_width = window_width - 2 * t_f_padx;  top_frame_height = 180
+top_frame_width = window_width - 2 * t_f_padx;  top_frame_height = 240
 # image frame
 im_f_padx = 10;  im_f_pady = 5
 im_frame_width = window_width - 2 * im_f_padx;  im_frame_height = 250
@@ -120,11 +142,26 @@ label_image_text = StringVar();  label_image_text.set('')
 label_ext_image_text = StringVar(); label_ext_image_text.set('')
 
 # ---- path variables ----
-path_dir_ds = os.path.join("Dataset", "polmonite")       # training dataset folder
-path_dir_test_ds = os.path.join("Dataset", "pkm_test_ds") # external test dataset folder
-path_dir_model = "Model"                                  # saved models folder
+# All paths are computed from BASE_DIR, i.e. the folder that CONTAINS
+# pytorch_version/ (the project root). This makes the paths independent of the
+# working directory: the program can be launched from anywhere, not only from
+# the project root. __file__ is this script's path, so going two levels up
+# lands on the project root regardless of the current directory.
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Folder names match the actual repository layout (lowercase, as on disk).
+dataset_root = os.path.join(BASE_DIR, "dataset")         # holds one sub-folder per dataset
+path_dir_ds = os.path.join(dataset_root, "polmonite")    # default; overridden by the GUI field
+path_dir_test_ds = os.path.join(dataset_root, "pkm_test_ds")  # external test dataset folder
+path_dir_model = os.path.join(BASE_DIR, "model")         # saved models folder
 path_check_point_model = os.path.join(path_dir_model, "train_ckpt")  # checkpoints folder
+path_dir_results = os.path.join(BASE_DIR, "result")      # where results are saved (if enabled)
 res_copy_ds_name = "res_ds_copy"
+
+# Name of the dataset currently loaded (the sub-folder under dataset/). It is set
+# from the GUI field at load time and used to route saved results into
+# result/<current_dataset_name>/. Empty until a dataset is loaded.
+current_dataset_name = ""
 
 # ---- model variables ----
 network = None                      # the nn.Module currently loaded/trained
@@ -191,7 +228,8 @@ def current_view_to_visualise():
     Button(top_frame, text="Analyse DS", command=lambda: btn_analyse_ds(path_ds_input.get(), image_width_input.get(), image_height_input.get(), image_channel_input.get())).grid(row=0, column=8, sticky="W", padx=5, pady=10)
     Checkbutton(top_frame, text="Resized DS copy", variable=toggle_duplicate_ds).grid(row=0, column=9, sticky="W", padx=5, pady=10)
     Checkbutton(top_frame, text="Greyscale DS copy", variable=toggle_grey_scale).grid(row=0, column=10, sticky="W", padx=5, pady=10)
-    Button(top_frame, text="Load image DS", command=lambda: btn_load_ds_method(image_width_input.get(), image_height_input.get(), image_channel_input.get())).grid(row=0, column=11, sticky="W", padx=5, pady=10)
+    Checkbutton(top_frame, text="Save results", variable=save_results).grid(row=1, column=10, sticky="W", padx=5, pady=10)
+    Button(top_frame, text="Load image DS", command=lambda: btn_load_ds_method(path_ds_input.get(), image_width_input.get(), image_height_input.get(), image_channel_input.get())).grid(row=0, column=11, sticky="W", padx=5, pady=10)
 
     # row 1
     Label(top_frame, text="CNN model name: ").grid(row=1, column=6, sticky="W", padx=5, pady=10)
@@ -212,9 +250,20 @@ def current_view_to_visualise():
     Label(top_frame, text="Number of train to do:").grid(row=2, column=8, sticky="W", padx=5, pady=10)
     num_train_input = Entry(top_frame, width=10); num_train_input.grid(row=2, column=9, sticky="WE", padx=5)
 
-    # row 3 (status)
-    Label(top_frame, textvariable=status_model_text).grid(row=3, column=2, sticky="W", padx=5, pady=10)
-    Label(top_frame, textvariable=status_DS_text).grid(row=3, column=3, sticky="W", padx=5, pady=10)
+    # row 3 (data augmentation - applied to the TRAINING set only, on the fly)
+    Label(top_frame, text="Data augment (train only):").grid(row=3, column=0, sticky="W", padx=5, pady=10)
+    Checkbutton(top_frame, text="Enable", variable=aug_enable).grid(row=3, column=1, sticky="W", padx=5, pady=10)
+    Checkbutton(top_frame, text="H-flip", variable=aug_hflip).grid(row=3, column=2, sticky="W", padx=5, pady=10)
+    Checkbutton(top_frame, text="V-flip", variable=aug_vflip).grid(row=3, column=3, sticky="W", padx=5, pady=10)
+    Checkbutton(top_frame, text="Rotation", variable=aug_rotation).grid(row=3, column=4, sticky="W", padx=5, pady=10)
+    Checkbutton(top_frame, text="Zoom", variable=aug_zoom).grid(row=3, column=5, sticky="W", padx=5, pady=10)
+    Checkbutton(top_frame, text="Shift", variable=aug_shift).grid(row=3, column=6, sticky="W", padx=5, pady=10)
+    Checkbutton(top_frame, text="Brightness", variable=aug_brightness).grid(row=3, column=7, sticky="W", padx=5, pady=10)
+    Checkbutton(top_frame, text="Contrast", variable=aug_contrast).grid(row=3, column=8, sticky="W", padx=5, pady=10)
+
+    # row 4 (status)
+    Label(top_frame, textvariable=status_model_text).grid(row=4, column=2, sticky="W", padx=5, pady=10)
+    Label(top_frame, textvariable=status_DS_text).grid(row=4, column=3, sticky="W", padx=5, pady=10)
 
     # ---- image frame ----
     image_frame = Frame(window, width=im_frame_width, height=im_frame_height, bg='grey')
@@ -303,14 +352,25 @@ def btn_load_ext_image():
 
 
 # ------------------------------------ start: methods for DS ------------------------------------
-def btn_load_ds_method(im_width, im_height, im_channel):
-    global ds_downloading
+def btn_load_ds_method(folder_name, im_width, im_height, im_channel):
+    global ds_downloading, path_dir_ds, current_dataset_name
     error_text.set('')
-    if not (ds_downloading or ds_analysing):
-        ds_downloading = True
-        Thread(target=import_image_from_ds, args=(path_dir_ds, im_width, im_height, im_channel)).start()
-    else:
+    if ds_downloading or ds_analysing:
         error_text.set(er_down_ds_text)
+        return
+    # resolve the dataset to load from the GUI field; fall back to the default
+    # folder only if the field is empty. The name also drives result/<name>/.
+    if is_valid_folder_name(folder_name) and os.path.isdir(os.path.join(dataset_root, folder_name)):
+        path_dir_ds = os.path.join(dataset_root, folder_name)
+        current_dataset_name = folder_name.strip()
+    elif folder_name.strip():
+        # a name was typed but the folder does not exist -> report and stop
+        error_text.set(er_no_ds_text)
+        return
+    else:
+        current_dataset_name = os.path.basename(path_dir_ds)   # keep the default
+    ds_downloading = True
+    Thread(target=import_image_from_ds, args=(path_dir_ds, im_width, im_height, im_channel)).start()
 
 
 def import_image_from_ds(path_ds, im_width, im_height, im_channel):
@@ -467,8 +527,8 @@ def analyse_ds(folder_name, im_width, im_height, im_channel):
     corrupt_images = []
     RGB_mean_dict = {}
 
-    if is_valid_folder_name(folder_name) and os.path.isdir(os.path.join("Dataset", folder_name)):
-        new_path_ds = os.path.join("Dataset", folder_name)
+    if is_valid_folder_name(folder_name) and os.path.isdir(os.path.join(dataset_root, folder_name)):
+        new_path_ds = os.path.join(dataset_root, folder_name)
     else:
         new_path_ds = path_dir_ds
     list_dir_ds = os.listdir(new_path_ds)
@@ -552,16 +612,82 @@ def make_set_ds():
 # ------------------------------------ end: methods for DS ------------------------------------
 
 
+# ------------------ start: data augmentation ------------------
+def build_augmentation_transform():
+    """Build the on-the-fly augmentation pipeline from the GUI toggles.
+
+    Returns a torchvision transform (operating on a float CHW tensor) that
+    applies only the transforms the user enabled, or None if augmentation is
+    off. The pipeline is size-preserving: every transform keeps the tensor at
+    (img_channel, img_height, img_width), so it can be dropped in right before
+    returning the sample. This is called ONCE per DataLoader build and reused
+    for every sample; the randomness lives inside each transform, so a different
+    variant is produced at each call/epoch.
+
+    IMPORTANT: this must only ever be attached to the TRAINING dataset. The
+    caller enforces this by passing augment=True only for the train loader.
+    """
+    if not aug_enable.get():
+        return None
+
+    ops = []
+    # geometric transforms
+    if aug_hflip.get():
+        ops.append(T.RandomHorizontalFlip(p=0.5))
+    if aug_vflip.get():
+        ops.append(T.RandomVerticalFlip(p=0.5))
+    if aug_rotation.get():
+        ops.append(T.RandomRotation(degrees=15))
+    if aug_zoom.get():
+        # random zoom via random resized crop, kept at the network input size
+        ops.append(T.RandomResizedCrop(size=(img_height, img_width),
+                                       scale=(0.8, 1.0), antialias=True))
+    if aug_shift.get():
+        # translation up to 10% of width/height, no rotation/scale here
+        ops.append(T.RandomAffine(degrees=0, translate=(0.1, 0.1)))
+    # photometric transforms (ColorJitter works on multi-channel; on greyscale
+    # brightness/contrast still apply, hue/saturation are simply not requested)
+    if aug_brightness.get():
+        ops.append(T.ColorJitter(brightness=0.2))
+    if aug_contrast.get():
+        ops.append(T.ColorJitter(contrast=0.2))
+
+    if not ops:                 # master switch on but no single transform picked
+        return None
+    return T.Compose(ops)
+
+
+def augmentation_summary():
+    """Human-readable list of the enabled transforms, for the training log."""
+    if not aug_enable.get():
+        return "disabled"
+    active = [name for flag, name in [
+        (aug_hflip, "h-flip"), (aug_vflip, "v-flip"), (aug_rotation, "rotation"),
+        (aug_zoom, "zoom"), (aug_shift, "shift"),
+        (aug_brightness, "brightness"), (aug_contrast, "contrast")]
+        if flag.get()]
+    return ", ".join(active) if active else "enabled but no transform selected"
+# ------------------ end: data augmentation ------------------
+
+
 # ------------------ start: PyTorch Dataset ------------------
 class ImageFolderDataset(Dataset):
     """Lazy dataset: reads and preprocesses each image on demand, so the whole
     dataset never sits in memory at once (equivalent purpose to the old
-    tf.data generator). Returns (tensor[C,H,W] float32, label int64)."""
+    tf.data generator). Returns (tensor[C,H,W] float32, label int64).
 
-    def __init__(self, image_paths, labels, use_greyscale):
+    If augment=True, the augmentation pipeline (built from the GUI toggles) is
+    applied on the fly after resize+normalisation. augment MUST be True only for
+    the training set; validation and test sets are always augment=False so their
+    metrics stay clean and comparable.
+    """
+
+    def __init__(self, image_paths, labels, use_greyscale, augment=False):
         self.image_paths = image_paths
         self.labels = np.array(labels).astype(np.int64)
         self.use_greyscale = use_greyscale
+        # build the transform only for the training set; None means "no-op"
+        self.transform = build_augmentation_transform() if augment else None
 
     def __len__(self):
         return len(self.image_paths)
@@ -582,7 +708,10 @@ class ImageFolderDataset(Dataset):
         if img.ndim == 2:                       # greyscale -> add channel axis
             img = img[:, :, None]
         img = np.transpose(img, (2, 0, 1))      # HWC -> CHW
-        return torch.from_numpy(img), int(self.labels[idx])
+        tensor = torch.from_numpy(img)
+        if self.transform is not None:          # training-only augmentation
+            tensor = self.transform(tensor)
+        return tensor, int(self.labels[idx])
 # ------------------ end: PyTorch Dataset ------------------
 
 
@@ -712,6 +841,7 @@ def make_fit_model(chosen_model, number_epoch, num_batch_size, num_early_patienc
     criterion = nn.CrossEntropyLoss()
 
     print("------------------------ MAKE AND FIT MODEL ------------------------")
+    print("Data augmentation (training set only):", augmentation_summary())
     start_all_time = time.time()
     for i in range(n_test):
         print("-------- start: test num ", i, " --------")
@@ -727,11 +857,12 @@ def make_fit_model(chosen_model, number_epoch, num_batch_size, num_early_patienc
                                  "batch_size": batch_size, "early_patience": early_patience})
 
         # -- data loaders --
-        train_loader = DataLoader(ImageFolderDataset(train_image, train_label, use_greyscale),
+        # augment=True ONLY on the training set; val/test are never augmented.
+        train_loader = DataLoader(ImageFolderDataset(train_image, train_label, use_greyscale, augment=True),
                                   batch_size=batch_size, shuffle=True, num_workers=0)
-        val_loader = DataLoader(ImageFolderDataset(val_img, val_label, use_greyscale),
+        val_loader = DataLoader(ImageFolderDataset(val_img, val_label, use_greyscale, augment=False),
                                 batch_size=batch_size, shuffle=False, num_workers=0)
-        test_loader = DataLoader(ImageFolderDataset(test_image, test_label, use_greyscale),
+        test_loader = DataLoader(ImageFolderDataset(test_image, test_label, use_greyscale, augment=False),
                                  batch_size=batch_size, shuffle=False, num_workers=0)
 
         # -- training loop with early stopping + best-weights checkpoint --
@@ -896,21 +1027,42 @@ def check_past_model(type_model):
             past_param_model["early_patience"] == early_patience)
 
 
+def _finalize_plot(fig, name):
+    """Either save the figure to result/<dataset>/ or show it on screen,
+    depending on the 'Save results' GUI toggle. 'name' is a short label used to
+    build the file name. Called instead of plt.show() for training/eval plots."""
+    if save_results.get():
+        ds_name = current_dataset_name if current_dataset_name else "unknown_dataset"
+        out_dir = os.path.join(path_dir_results, ds_name)
+        os.makedirs(out_dir, exist_ok=True)
+        # sanitise the label into a filename and add a timestamp to avoid clashes
+        safe = "".join(c if c.isalnum() else "_" for c in name).strip("_")
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        out_path = os.path.join(out_dir, f"{safe}_{stamp}.png")
+        fig.savefig(out_path, bbox_inches='tight', dpi=120)
+        plt.close(fig)
+        print("Saved result plot:", out_path)
+    else:
+        plt.show()
+
+
 def plot_accuracy_and_loss(train_hist, val_hist, test_hist):
     runs = range(1, len(train_hist['accuracy']) + 1)
-    plt.figure(figsize=(10, 6))
+    fig = plt.figure(figsize=(10, 6))
     plt.plot(runs, train_hist['accuracy'], label='Train Accuracy')
     plt.plot(runs, val_hist['accuracy'], label='Validation Accuracy')
     plt.plot(runs, test_hist['accuracy'], label='Test Accuracy')
     plt.xlabel('Run'); plt.ylabel('Accuracy'); plt.title('Accuracy per run')
-    plt.legend(); plt.grid(True); plt.show()
+    plt.legend(); plt.grid(True)
+    _finalize_plot(fig, "accuracy_per_run")
 
-    plt.figure(figsize=(10, 6))
+    fig = plt.figure(figsize=(10, 6))
     plt.plot(runs, train_hist['loss'], label='Train Loss')
     plt.plot(runs, val_hist['loss'], label='Validation Loss')
     plt.plot(runs, test_hist['loss'], label='Test Loss')
     plt.xlabel('Run'); plt.ylabel('Loss'); plt.title('Loss per run')
-    plt.legend(); plt.grid(True); plt.show()
+    plt.legend(); plt.grid(True)
+    _finalize_plot(fig, "loss_per_run")
 
 
 def print_average_metrics(train_hist, val_hist, test_hist):
@@ -943,7 +1095,7 @@ def plot(title, value_list):
     fig.gca().yaxis.set_major_locator(MaxNLocator(integer=True))
     plt.plot(value_list, 'o-b')
     plt.title(str(title)); plt.xlabel("# Epochs"); plt.ylabel("Value")
-    plt.show()
+    _finalize_plot(fig, str(title))
 
 
 def compute_confusion_matrix(model, loader, classes):
@@ -971,7 +1123,7 @@ def compute_confusion_matrix(model, loader, classes):
             ax.text(j, i, f"{conf_matrix[i][j]}{conf_perc[i][j]}", va='center', ha='center', fontsize=12)
     plt.xlabel("Predicted", fontsize=14); plt.ylabel("Actual", fontsize=14)
     plt.title("Confusion Matrix", fontsize=16)
-    plt.show()
+    _finalize_plot(fig, "confusion_matrix")
 
 
 def GPU_check():

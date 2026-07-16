@@ -43,18 +43,25 @@ General_CNN_GUI/
 │       ├── GoogLeNet_class.py
 │       └── IfritNet_class.py
 │
-├── Dataset/                       # image datasets (shared by both versions)
-│   └── <one sub-folder per class>
-├── Model/                         # saved models (shared)
-└── results/                       # results of the cross-dataset tests
-    ├── pneumonia/
+├── dataset/                      # image datasets (shared by both versions)
+│   ├── polmonite/                # e.g. NORMAL/ and PNEUMONIA/ sub-folders
+│   │   ├── NORMAL/
+│   │   └── PNEUMONIA/
+│   ├── satellite/                # e.g. cloudy/ desert/ green_area/ water/
+│   └── res_ds_copy/              # auto-generated resized copy (optional)
+├── model/                        # saved models (shared)
+│   └── train_ckpt/               # best-weights checkpoints (.pt), auto-created
+└── result/                       # results of the cross-dataset tests
+    ├── polmonite/
     └── satellite/
 ```
 
 The two versions each keep their own `net_classes/` package because the network
 classes are implemented with two different frameworks (Keras layers vs
-`torch.nn.Module`) and must not collide when imported. `Dataset/` and `Model/`
-are shared, so datasets and trained models are not duplicated.
+`torch.nn.Module`) and must not collide when imported. `dataset/` and `model/`
+are shared, so datasets and trained models are not duplicated. Note the folder
+names are lowercase (`dataset`, `model`, `result`); on case-sensitive
+filesystems (Linux/WSL) the names must match exactly.
 
 Datasets are expected to be organised as **one sub-folder per class**. The class
 label is assigned automatically from the sub-folder name, so the same GUI works
@@ -108,14 +115,14 @@ the command matching your OS and CUDA version. Typical commands:
 
 ```
 # GPU build (example: CUDA 12.4 — replace cu124 with your version, e.g. cu121, cu126)
-pip3 install torch --index-url https://download.pytorch.org/whl/cu124
+pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 
 # CPU-only build (no GPU, or just to try the program)
-pip3 install torch --index-url https://download.pytorch.org/whl/cpu
+pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 ```
 
 For reproducibility on a serious project, pin the version (e.g.
-`pip3 install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu124`).
+`pip3 install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124`).
 
 **Step 3 — install the remaining dependencies:**
 
@@ -148,12 +155,16 @@ python genCNNClassifier_pytorch.py
 
 Both GUIs behave the same way:
 
-1. Type the dataset folder name (relative to `Dataset/`) and, optionally, the
-   input image size (defaults: 224 × 224 × 3).
+1. Type the dataset folder name (the sub-folder inside `dataset/`, e.g.
+   `polmonite` or `satellite`) and, optionally, the input image size
+   (defaults: 224 × 224 × 3). In the PyTorch version the dataset is always taken
+   from this field — there is no fixed default dataset, so type the name before
+   loading.
 2. **Analyse DS** (optional) inspects the dataset (class balance, shapes,
    formats, per-class colour means).
-3. **Load image DS** loads the dataset (only image paths and labels are kept in
-   memory; pixels are read lazily in batches during training).
+3. **Load image DS** loads the dataset named in the field (only image paths and
+   labels are kept in memory; pixels are read lazily in batches during
+   training).
 4. Select a CNN model, set epochs / batch size / early patience / number of
    training runs, then **Fit CNN model**.
 5. **Take image** / **Classify** to visually test a single prediction;
@@ -161,7 +172,54 @@ Both GUIs behave the same way:
 6. **Save CNN model** / **Load CNN model** to persist and reload a trained
    model.
 
+**Paths (PyTorch version).** All paths (`dataset/`, `model/`, `result/`) are
+computed from the project root, i.e. the folder that contains
+`pytorch_version/`, and are resolved from the script location rather than the
+current directory. The program can therefore be launched either from the
+project root or from inside `pytorch_version/` — both work.
+
+**Saving results.** The **Save results** checkbox controls what happens to the
+training/evaluation plots and confusion matrices: when it is off (default) they
+are only shown on screen; when it is on they are instead saved as PNG files into
+`result/<dataset name>/` (the dataset name being the one typed in the DS field),
+so results for each dataset land in their own folder. The dataset-analysis bar
+charts are always shown on screen. The `model/train_ckpt/` folder (best-weights
+checkpoints, saved as `.pt`) is created automatically on the first training run.
+
 Available architectures: `AlexNet`, `GoogleNet`, and `IfritNet` versions 1–4.
+
+---
+
+## Data augmentation (PyTorch version)
+
+The PyTorch version supports **on-the-fly data augmentation**, applied **only to
+the training set**. At every epoch each training image is randomly transformed
+when it is read by the DataLoader; the images on disk are never modified and no
+new files are created. Validation and test sets are never augmented, so their
+metrics stay clean and comparable across experiments.
+
+Augmentation is controlled from the GUI with one master toggle (**Enable**) plus
+one toggle per transform, so each transform can be turned on or off
+independently:
+
+- **H-flip** – random horizontal flip
+- **V-flip** – random vertical flip
+- **Rotation** – random rotation (±15°)
+- **Zoom** – random zoom / scale (random resized crop, kept at input size)
+- **Shift** – random translation (up to 10% of width/height)
+- **Brightness** – random brightness change
+- **Contrast** – random contrast change
+
+A transform is used only when both the master switch and its own toggle are on.
+The enabled transforms are printed in the training log at the start of each fit.
+
+Note on domain suitability: some transforms are not appropriate for every
+dataset. For chest X-rays, for example, a vertical flip or a horizontal flip can
+produce anatomically implausible images (and horizontal flip can hide
+conditions tied to left/right asymmetry), so prefer mild rotation, small
+shift/zoom and brightness/contrast there. For satellite imagery, flips and
+rotations are usually safe because orientation carries no fixed meaning. Choose
+the transforms per dataset accordingly.
 
 ---
 
@@ -181,8 +239,8 @@ Datasets tried so far:
   https://www.kaggle.com/datasets/mahmoudreda55/satellite-image-classification
 
 The results of these cross-dataset tests (metrics, plots, confusion matrices)
-are collected in the **`results/`** folder, organised per dataset
-(`results/pneumonia/`, `results/satellite/`, ...). In the future these results
+are collected in the **`result/`** folder, organised per dataset
+(`result/polmonite/`, `result/satellite/`, ...). In the future these results
 may also be written up in a dedicated document.
 
 ---

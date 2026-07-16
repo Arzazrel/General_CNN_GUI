@@ -5,8 +5,11 @@
 # GPU drivers. Do NOT rely on a plain "pip install torch" if you want GPU
 # support. See the README section "Installing PyTorch" for details.
 #
-# torch (install via the official selector, e.g. CUDA 12.x build)
+# torch + torchvision (install via the official selector, e.g. CUDA 12.x build,
+# so they share the same CUDA version). torchvision provides the on-the-fly data
+# augmentation transforms (torchvision.transforms.v2).
 torch
+torchvision
 
 # rest of the dependencies (CPU packages, safe to install via pip)
 numpy
