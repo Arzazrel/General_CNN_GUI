@@ -1,0 +1,22 @@
+# dati e modelli (pesanti, non versionare)
+Dataset/*
+!Dataset/.gitkeep
+Model/*
+!Model/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# modelli salvati / checkpoint
+*.pt
+*.pth
+*.keras
+*.h5
+*.hdf5
+
+# sistema
+.DS_Store
