@@ -1,0 +1,16 @@
+# Python dependencies for the PyTorch version of General_CNN_GUI.
+#
+# IMPORTANT: install PyTorch itself with the command from the official selector
+# (https://pytorch.org/get-started/locally/) so that the CUDA build matches your
+# GPU drivers. Do NOT rely on a plain "pip install torch" if you want GPU
+# support. See the README section "Installing PyTorch" for details.
+#
+# torch (install via the official selector, e.g. CUDA 12.x build)
+torch
+
+# rest of the dependencies (CPU packages, safe to install via pip)
+numpy
+opencv-python
+scikit-learn
+matplotlib
+Pillow
